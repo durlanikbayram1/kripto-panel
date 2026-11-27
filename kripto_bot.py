@@ -375,6 +375,38 @@ def hedef_tahmini(mumlar, fiyat, sicrama=0.0):
     tahmin = max(0.3, min(8.0, tahmin))
     return {"tahmin": round(tahmin, 2), "atr": round(atr, 3), "direnc": None if dr is None else round(dr, 2)}
 
+def zararsiz_fiyat(giris_fiyati, alis_kom_orani):
+    """Bu fiyatın altında stop'ta satılırsa (alış + satış komisyonu + kayma sonrası) zarar edilir."""
+    return giris_fiyati / ((1 - alis_kom_orani) * (1 - KAYMA_YUZDE / 100) * (1 - TAKER_KOMISYON_YUZDE / 100))
+
+def takip_ekle(z, mesafe=None):
+    """Grid / dip pozisyonuna takip eden stop ekler (hedefi korunur). Açık eski pozisyonlara da uygulanır."""
+    m = mesafe or (globals().get("AYAR", {}).get("tm", 0) / 100) or 1.0
+    g = z["giris_fiyati"]
+    z["takip"], z["iz_mesafe"] = True, m
+    z["tepe"] = max(z.get("tepe", g), g)
+    z.setdefault("zararsiz", zararsiz_fiyat(g, z.get("giris_komisyon", 0) / z["tutar"] if z.get("tutar") else 0.0015))
+    z["stop"] = max(takip_stop_fiyati(z["tepe"], g, z["zararsiz"], m), z["stop"])   # stop asla aşağı inmez
+    if not z.get("takip_gecti"):
+        z["stop0"] = z["stop"]
+    z["takip_gecti"] = True
+    return z
+
+KAR_KILIT_BASLA = 1.0       # coin bu kadar yükselince kâr kilidi devreye girer
+KAR_KORU_ORAN = 0.70        # kilit devredeyken net kârın en az %70'i korunur
+
+def takip_stop_fiyati(tepe, giris, zararsiz, mesafe):
+    """Takip eden stop — her şey MALİYETE göre (alış + satış komisyonu + kayma dahil):
+    - Başlangıçta stop'ta satılırsa net zarar = mesafe (ör. %1).
+    - Coin ne kadar yükselirse stop da o kadar yükselir: +%1 yükselişte stop tam zararsız satış seviyesinde.
+    - Yükseliş %1'i geçince net kârın en az %70'i korunur (yükseliş büyüdükçe tepenin %1 gerisi daha fazla korur)."""
+    yukselis = (tepe / giris - 1) * 100
+    net = yukselis - mesafe                                  # stop'ta satılırsa net sonuç (%)
+    if yukselis >= KAR_KILIT_BASLA - 1e-9:          # %1 dahil
+        net_kar = (tepe / zararsiz - 1) * 100                # tepede satılsaydı net kâr
+        net = max(net, KAR_KORU_ORAN * net_kar)
+    return zararsiz * (1 + net / 100)
+
 def takip_mesafesi(bilgi=None):
     """Takip eden stop mesafesi (%). Ayar 0 ise coinin son dakikalardaki oynaklığından (ATR) hesaplanır."""
     tm = globals().get("AYAR", {}).get("tm", 0)
@@ -467,7 +499,10 @@ class Profil:
             "iz": CIKIS_MODU in ("iz", "oto", "takip"), "iz_mesafe": mesafe, "tepe": giris_fiyati, "iz_aktif": False,
             "islenen_t": mum_t,
             "bilgi": bilgi or {}, "mfe": 0.0, "mae": 0.0, "mfe_dk": 0, "kar1": False,
+            "zararsiz": zararsiz_fiyat(giris_fiyati, komisyon / tutar),
         }
+        if takip:
+            poz["stop"] = poz["stop0"] = takip_stop_fiyati(giris_fiyati, giris_fiyati, poz["zararsiz"], mesafe)
         self.pozisyonlar.append(poz)
         self.komisyon_toplam += komisyon
         return poz
@@ -538,7 +573,7 @@ class Profil:
         if not p.get("iz") and anlik >= p["hedef"]:
             return self.cik(p, p["hedef"], "KAR AL", maker=True)
         # Canlı stop: fiyat yeni tepe yaptıysa stop mumun kapanmasını beklemeden hemen yükselir
-        if p.get("iz"):
+        if p.get("iz") or p.get("takip"):
             once = p["stop"]
             iz_guncelle(p, {"h": anlik})
             if p["stop"] > once and p.get("canli_t") != mumlar[-1]["t"]:
@@ -591,16 +626,16 @@ def basabas_kontrol(p):
 
 def iz_guncelle(p, m):
     """İz süren stop: kâr +IZ_BASLAT'a ulaşınca stop, görülen en yüksek fiyatın IZ_MESAFE altına taşınır."""
-    if not p.get("iz"):
+    if not p.get("iz") and not p.get("takip"):
         return
     p["tepe"] = max(p.get("tepe", p["giris_fiyati"]), m["h"])
     if p.get("takip"):
         # Takip eden stop: stop = tepe × (1 − mesafe), sadece yukarı. Fiyat mesafe + %0,4 yükselince
         # stop alış/satış komisyonunu ve kaymayı da karşılar: işlem artık zararla kapanmaz.
-        yeni = p["tepe"] * (1 - p.get("iz_mesafe", 1.0) / 100)
+        yeni = takip_stop_fiyati(p["tepe"], p["giris_fiyati"], p.get("zararsiz", p["giris_fiyati"] * 1.0035), p.get("iz_mesafe", 1.0))
         if yeni > p["stop"]:
             p["stop"] = yeni
-            if not p.get("iz_aktif") and yeni >= p["giris_fiyati"] * (1 + BASABAS_PAY_YUZDE / 100):
+            if not p.get("iz_aktif") and yeni >= p.get("zararsiz", p["giris_fiyati"] * (1 + BASABAS_PAY_YUZDE / 100)):
                 p["iz_aktif"] = True
                 bildirim = globals().get("bildir")
                 if bildirim:
@@ -733,7 +768,7 @@ def panel_verisi(profiller, calisiyor=True, son_fiyatlar=None):
                          "m": round(z["tutar"], 2), "t": z["giris_mum_t"],
                          "iz": 1 if z.get("iz") else 0, "oto": 1 if z.get("oto") else 0, "tk": 1 if z.get("takip") else 0, "th": z.get("tahmin"), "ia": 1 if z.get("iz_aktif") else 0, "im": z.get("iz_mesafe", 0),
                          "s0": round(z.get("stop0", z["stop"]), 6), "tp": round(z.get("tepe", z["giris_fiyati"]), 6),
-                         "bs": 1 if z.get("bs") else 0,
+                         "bs": 1 if z.get("bs") else 0, "be": round(z.get("zararsiz", z["giris_fiyati"] * 1.004), 6),
                          "gz": int(z["giris_zamani"].timestamp()), "s": i, "gk": z.get("gk")})
         p_liste.append({"n": p.ad, "tr": p.tur, "on": 1 if g.get("AYAR", {}).get({"grid": "st_g", "dip": "st_d"}.get(p.tur, "st_m"), 1) else 0,
                         "b": round(p.baslangic, 2), "a": round(p.ana_para, 2),
@@ -784,7 +819,7 @@ KLAVYE = "UYGULAMA"   # yaz(..., klavye=KLAVYE) → mesaja güncel verili uygula
 KLAVYEYI_KALDIR = {"remove_keyboard": True}
 AYAR = {"hs": "dengeli", "zl": GUNLUK_ZARAR_LIMITI, "bil": ISLEM_BILDIRIMI, "oz": OZET_ARALIGI_SAAT, "zd": 0,
         "bs": 1, "fit": 1, "gec": 1, "lik": 1, "tey": 1, "pot": 1, "rej": 1, "st_m": 1, "st_g": 1, "st_d": 1,
-        "cm": "takip", "tm": 0, "mb": 1, "sv": 2}
+        "cm": "takip", "tm": 100, "mb": 1, "sv": 3}
 ELENEN = {"tarih": None, "fit": 0, "gec": 0, "lik": 0, "tey": 0, "pot": 0, "rej": 0, "mb": 0}    # bugün filtrelere takılan sinyal sayısı
 son_radar = []
 son_tarama_ts = 0
@@ -894,7 +929,9 @@ def durumu_yukle():
         kayitli = veri.get("ayar", {})
         AYAR.update(kayitli)
         if kayitli.get("sv", 0) < 2:            # eski sürümden geçiş: yeni önerilen ayarlar devreye girer
-            AYAR.update(cm="takip", tm=0, mb=1, sv=2)
+            AYAR.update(cm="takip", mb=1)
+        if kayitli.get("sv", 0) < 3:            # sabit %1 takip mesafesi (tüm stratejiler aynı kural)
+            AYAR.update(tm=100, sv=3)
         GUN.update(veri.get("gun", {}))
         MAKS_BEKLEME_DK = veri.get("sure", MAKS_BEKLEME_DK)
         hassasiyet_uygula(AYAR.get("hs", "dengeli"))
@@ -914,6 +951,10 @@ def durumu_yukle():
             for z in eski:
                 poz = dict(z)
                 poz["giris_zamani"] = dt.datetime.fromisoformat(poz["giris_zamani"])
+                if p.tur in ("grid", "dip") and not poz.get("takip_gecti"):
+                    takip_ekle(poz)              # eski uzak stop yerine %1 takip eden stop
+                    print(f"🔁 {poz['coin']} ({p.tur}) takip eden stopa geçti: stop {fiyat(poz['stop'])}")
+                poz.setdefault("zararsiz", zararsiz_fiyat(poz["giris_fiyati"], poz.get("giris_komisyon", 0) / poz["tutar"]))
                 p.pozisyonlar.append(poz)
         return True
     except Exception as e:
@@ -1580,7 +1621,8 @@ def grid_isle(coin, mumlar):
             poz = G.gir(coin, dolum, m["t"], {"tur": "GRID", "seviye": k}, maker=True, tutar=pay)
             if not poz:
                 break
-            poz.update(hedef=L * (1 + st["s"] / 100), stop=st["stop"], stop0=st["stop"], iz=False, oto=False, gk=k)
+            poz.update(hedef=L * (1 + st["s"] / 100), iz=False, oto=False, gk=k)
+            takip_ekle(poz)
             print(f"🧱 Grid {coin} {k}. basamak alındı: {fiyat(dolum)} · satış {fiyat(poz['hedef'])}")
         st["islenen_t"] = m["t"]
 
@@ -1647,8 +1689,8 @@ def dip_isle(coin, mumlar):
             dolum = min(emir["fiyat"], m["o"])
             poz = D.gir(coin, dolum, m["t"], {"tur": "DIP", "z": emir["z"], "tahmin": emir["hedef"]}, maker=True)
             if poz:
-                poz.update(hedef=dolum * (1 + emir["hedef"] / 100), stop=dolum * (1 - DIP_STOP / 100),
-                           stop0=dolum * (1 - DIP_STOP / 100), iz=False, oto=False)
+                poz.update(hedef=dolum * (1 + emir["hedef"] / 100), iz=False, oto=False)
+                takip_ekle(poz)
                 bildir(f"🎣 DİPTEN ALIM (demo, limit) | {coin}: {fiyat(dolum)} TL · Tutar: {tl(poz['tutar'])}\n"
                        f"Aşırı düşüş (z {emir['z']}) · Hedef: {fiyat(poz['hedef'])} (+%{emir['hedef']:g}) | Stop: {fiyat(poz['stop'])}")
             return
