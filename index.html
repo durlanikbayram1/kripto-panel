@@ -61,6 +61,13 @@
   .pr .c{font-weight:800;font-size:13px} .pr .c small{display:block;font-weight:400;font-size:9px;color:var(--dim)}
   .pr .t{position:relative;height:10px;background:#111317}
   .pr .t i{position:absolute;top:0;bottom:0;width:2px}
+  .lv{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+  .lv div{border:1px solid var(--ln);padding:5px 6px}
+  .lv span{display:block;font-size:8.5px;color:var(--dim);letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lv b{display:block;font-size:12.5px;margin-top:1px}
+  .lv i{font-style:normal;font-size:10.5px;font-weight:700;color:var(--dim)}
+  .lv .up i{color:var(--grn)} .lv .dn i{color:var(--red)} .lv .am i{color:var(--amb)}
+  .lv .up{border-color:#1e6b45} .lv .dn{border-color:#7a2530}
   .pr .v{text-align:right;font-weight:700} .pr .v small{display:block;font-size:9px;font-weight:400}
   .tot{display:flex;justify-content:space-between;align-items:center;border-top:1px dashed var(--ln2);margin-top:4px;padding-top:7px}
   .tot b{font-size:14px}
@@ -271,6 +278,20 @@ try{ const bk=JSON.parse(localStorage.getItem("bekleyenAyar")||"{}"); for(const 
 const A=V.ay; A.cm=A.cm||"takip"; A.tm=A.tm??0; A.mb=A.mb??1; A.ib=A.ib??1.5; A.im=A.im??0.75; A.ka=A.ka??2; A.zs=A.zs??1; A.mp=A.mp??2; A.hs=A.hs||"dengeli"; A.sure=A.sure??0; A.zl=A.zl??0; A.oz=A.oz??4;
 const deger=o=>(o.m||0)*(1-0.0015)*o.f/o.g;      // eldeki coin miktarı × anlık fiyat
 const karO=o=>deger(o)-(o.m||0);                  // alış komisyonu dahil anlık kâr/zarar
+// Canlı takip stop: anlık fiyat yeni tepe yaptıysa stop hemen yükselir (bot da 5 sn'de bir aynısını yapar)
+const canliStop=o=>{ if(!o.tk||o.kap||!o.f) return; o.tp=Math.max(o.tp||o.g,o.f);
+  const y=o.tp*(1-(o.im||1)/100); if(y>o.st){ o.st=y; if(y>=o.g*1.004) o.ia=1; }
+  if(o.f<=o.st) o.kap={s:o.ia?"IZ":"STOP",f:o.st,z:new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}; };
+// Stop · giriş · hedef kutuları (girişe göre %)
+function seviyeHTML(o){
+  const pc=v=>(v/o.g-1)*100, ps=v=>(v>=0?"+":"-")+"%"+fmt(Math.abs(v)), d=pc(o.f);
+  const stK=o.ia?(o.tk?"KÂR KİLİDİ":"İZ STOP"):(o.st>=o.g?"BAŞABAŞ":(o.tk?"TAKİP STOP":"STOP"));
+  const sag=o.tk?["TEPE",o.tp||o.g]:o.oto?["TAHMİN",o.h]:(o.iz&&!o.ia)?["İZ BAŞLAR",o.h]:o.iz?["TEPE",o.tp||o.f]:["HEDEF",o.h];
+  const sc=pc(o.st)>=0.4?"up":pc(o.st)>=0?"am":"dn";
+  return `<div class="lv"><div class="${sc}"><span>${stK}${o.tk?" · %"+fmt(o.im||1)+" GERİ":""}</span><b data-dv="st_${o.c}" data-v="${(+o.st).toFixed(6)}">${fp(o.st)}</b><i>${ps(pc(o.st))}</i></div>
+    <div class="${d>0?"up":d<0?"dn":""}" style="border-color:var(--ln)"><span>GİRİŞ</span><b>${fp(o.g)}</b><i>şimdi ${ps(d)}</i></div>
+    <div class="up"><span>${sag[0]}</span><b>${fp(sag[1])}</b><i>${ps(pc(sag[1]))}</i></div></div>`;
+}
 const STR=[["momentum","🚀","MOMENTUM","Ani sıçramaları yakalar"],["grid","🧱","GRID","BTC/ETH merdiven limit emir"],["dip","🎣","DİPTEN ALIM","Aşırı düşüşte limit alış"]];
 const strBilgi=tr=>STR.find(x=>x[0]===tr)||STR[0];
 const TOP=()=>{const t={b:0,a:0,q:0,c:0,w:0,t:0}; (V.p||[]).forEach(x=>{for(const k in t) t[k]+=x[k]||0;}); return t;};
@@ -380,7 +401,7 @@ function mcCiz(){
 function kapHTML(K){
   return K.map(o=>{const s=SEBEP[o.kap.s]||[o.kap.s,"dm"], r=kapSonuc(o);
     return `<div class="kapr"><div><b>${o.c}</b> <span class="${s[1]}" style="font-size:10px">${s[0]}</span>
-      <small>${fp(o.kap.f)} · ${o.kap.z} · BOT SATIŞI İŞLİYOR (≤15 SN)</small></div>
+      <small>${fp(o.kap.f)} · ${o.kap.z} · BOT SATIŞI İŞLİYOR (≤5 SN)</small></div>
       <div class="v ${cls(r)}">≈ ${isr(r)}${fmt(r)}<small class="dm">TAHMİNİ · KOM. DAHİL</small></div></div>`}).join("");
 }
 
@@ -427,11 +448,10 @@ function ciz(){
   $("apTag").className="tg "+(plTL>=0?"g":"r"); $("apTag").textContent="ANLIK "+isr(plTL)+fmt(plTL)+" TL";
   $("ap").innerHTML=(O.length?`<div class="canli"><div class="row"><div><span>POZİSYONDAKİ PARA · CANLI</span><b id="pzD" data-v="${simdiD.toFixed(2)}">${fmt(simdiD)} TL</b></div>
       <div class="k"><span>YATIRILAN ${fmt(yatan)} TL</span><b class="${cls(plTL)}">${isr(plTL)}${fmt(plTL)} TL</b></div></div></div>`:"")+
-    (O.length?O.map(o=>{const yer=v=>Math.max(2,Math.min(98,8+(v-o.st)/(o.h-o.st)*88)),k=karO(o),d=(o.f/o.g-1)*100;
+    (O.length?O.map(o=>{const ust=o.tk?Math.max(o.h,o.tp||o.g,o.f)*1.002:o.h, yer=v=>Math.max(2,Math.min(98,8+(v-o.st)/((ust-o.st)||1)*88)),k=karO(o),d=(o.f/o.g-1)*100;
     return `<div class="pr"><div class="c">${o.c}<small>${strBilgi((V.p[o.s||0]||{}).tr)[1]} ${fmt(o.m||0,0)} TL${o.gk?" · B"+o.gk:""}</small><em data-dv="${o.c}" data-v="${deger(o).toFixed(2)}">${fmt(deger(o))}</em></div>
-      <div><div class="t"><i style="left:8%;background:var(--red)"></i><i style="left:${yer(o.g)}%;background:var(--dim)"></i><i style="left:${yer(o.f)}%;background:var(--amb);width:3px"></i><i style="left:96%;background:var(--grn)"></i></div>
-      <div class="lg"><span>${o.ia?"iz stop":"stop"} ${fp(o.st)}</span><span>${o.tk?"tepe "+fp(o.tp||o.g):o.oto?(o.ia?"tepe "+fp(o.tp||o.f)+" · ":"")+"tahmin "+fp(o.h):o.iz?(o.ia?"tepe "+fp(o.tp||o.f):"iz "+fp(o.h)):"hedef "+fp(o.h)}</span></div></div>
-      <div class="v ${cls(k)}">${isr(k)}${fmt(k)}<small>${isr(d)}${fmt(d)}%</small></div></div>`}).join("")
+      <div><div class="t"><i style="left:8%;background:var(--red)"></i><i style="left:${yer(o.g)}%;background:var(--dim)"></i><i style="left:${yer(o.f)}%;background:var(--amb);width:3px"></i><i style="left:96%;background:var(--grn)"></i></div></div>
+      <div class="v ${cls(k)}">${isr(k)}${fmt(k)}<small>${isr(d)}${fmt(d)}%</small></div>${seviyeHTML(o)}</div>`}).join("")
     :(K.length?"":`<div class="none">AÇIK POZİSYON YOK · OTORADAR FIRSAT KOLLUYOR</div>`))+kapHTML(K);
   $("komT").textContent="TOPLAM KOMİSYON · "+p.t+" İŞLEM"; $("kom").textContent=fmt(p.c)+" TL";
   mcCiz();
@@ -466,7 +486,7 @@ function ciz(){
   $("dpT").innerHTML=`Açık pozisyonlar · <em>${O.length} açık</em>`;
   $("dp").innerHTML=O.length?O.map((o,i)=>{const d=(o.f/o.g-1)*100,k=karO(o);
     return `<div class="sr col"><div class="row" style="align-items:center"><div><b style="font-size:14px">${o.c}</b><span class="stg">${strBilgi((V.p[o.s||0]||{}).tr)[2]}${o.gk?" B"+o.gk:""}</span> <span class="dm" style="display:inline">· ${fmt(o.m||0)} → </span><b class="am">${fmt(deger(o))} TL</b></div><b class="${cls(k)}">${isr(k)}${fmt(k)} · ${isr(d)}${fmt(d)}%</b></div>
-      <div class="lg" style="margin:0"><span>GİRİŞ ${fp(o.g)}</span><span>ŞİMDİ ${fp(o.f)}</span><span class="up">${o.tk?"TEPE "+fp(o.tp||o.g)+" · %"+fmt(o.im||0)+" GERİDEN":o.oto?"TAHMİN "+fp(o.h)+(o.th?" (+%"+fmt(o.th)+")":""):o.iz?(o.ia?"TEPE "+fp(o.tp||o.f):"İZ BAŞLAR "+fp(o.h)):"HEDEF "+fp(o.h)}</span><span class="${o.st>=o.g?"am":"dn"}">${o.ia?(o.tk?"KÂR KİLİDİ":"İZ STOP"):(o.st>=o.g?"BAŞABAŞ":(o.tk?"TAKİP STOP":"STOP"))} ${fp(o.st)}</span></div>
+      ${seviyeHTML(o)}
       <button class="btn r" data-sat="${i}">✕ ${o.c} POZİSYONUNU KAPAT</button></div>`}).join("")
     :(K.length?"":`<div class="none">AÇIK POZİSYON YOK</div>`);
   $("dp").innerHTML+=kapHTML(K);
@@ -595,7 +615,7 @@ async function canliGuncelle(){
   if(Array.isArray(j)) j.forEach(x=>f[x.symbol]=+x.price);
   else await Promise.all(sem.map(async s=>{const k=await getir("/api/v3/ticker/price?symbol="+s); if(k&&k.price) f[s]=+k.price;}));
   let d=false;
-  acik().forEach(o=>{if(f[o.c+"TRY"]&&!o.kap&&!(o.kz&&Date.now()-o.kz<20000)){o.f=f[o.c+"TRY"];d=true;}}); V.r.forEach(r=>{if(f[r[0]+"TRY"]){r[1]=f[r[0]+"TRY"];d=true;}});
+  acik().forEach(o=>{if(f[o.c+"TRY"]&&!o.kap&&!(o.kz&&Date.now()-o.kz<20000)){o.f=f[o.c+"TRY"];canliStop(o);d=true;}}); V.r.forEach(r=>{if(f[r[0]+"TRY"]){r[1]=f[r[0]+"TRY"];d=true;}});
   if(!d) return; canliSon=Date.now();
   $("live").className="tg g"; $("live").textContent="● CANLI"+(kaynakAd?" · "+kaynakAd:"");
   const once={}; document.querySelectorAll("[data-v]").forEach(e=>once[e.id||e.dataset.dv]=+e.dataset.v);
@@ -640,7 +660,7 @@ async function kapanisKontrol(){
         else if(o.iz&&tepe>=o.h){ const y=tepe*(1-izm); if(y>stop){stop=y;ia=true;} }
         if(bsAcik&&!o.oto&&!o.tk&&!ia&&!bs&&(tepe/o.g-1)*100>=1){ const y=o.g*1.004; if(y>stop){stop=y;bs=true;} }
       } }
-    if(!o.kap){ o.st=Math.max(o.st,stop); o.ia=ia||o.ia; o.tp=Math.max(o.tp||o.g,tepe); }
+    if(!o.kap){ o.st=Math.max(o.st,stop); o.ia=ia||o.ia; o.tp=Math.max(o.tp||o.g,tepe); canliStop(o); }
     if(!o.kap&&!o.ia&&A.sure&&o.gz&&Date.now()/1000-o.gz>=A.sure*60) o.kap={s:"SURE",f:o.f,z:saat(Date.now())};
   }
   if(degisti){ const y=window.scrollY; ciz(); window.scrollTo(0,y); }

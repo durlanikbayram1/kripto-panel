@@ -521,8 +521,11 @@ class Profil:
             if m["t"] <= max(p["giris_mum_t"], p.get("islenen_t", 0)):
                 continue
             yol_guncelle(p, m)
-            if m["l"] <= p["stop"]:
-                return self.cik(p, p["stop"], stop_sebebi(), maker=False)
+            # Bu mum içinde stop canlı fiyatla yükseltildiyse, mumun dibi yükseltmeden ÖNCE gelmiş olabilir:
+            # o mum için mum başındaki stop esas alınır (sonraki düşüşler 5 sn'lik canlı kontrolde yakalanır).
+            esik = p.get("stop_mum_bas", p["stop"]) if m["t"] == p.get("canli_t") else p["stop"]
+            if m["l"] <= esik:
+                return self.cik(p, esik, stop_sebebi(), maker=False)
             if not p.get("iz") and m["h"] >= p["hedef"]:
                 return self.cik(p, p["hedef"], "KAR AL", maker=True)
             if i < son_index:                       # mum kapandı: stop yükseltmeleri sonraki mumlardan geçerli
@@ -534,6 +537,12 @@ class Profil:
             return self.cik(p, anlik, stop_sebebi(), maker=False)
         if not p.get("iz") and anlik >= p["hedef"]:
             return self.cik(p, p["hedef"], "KAR AL", maker=True)
+        # Canlı stop: fiyat yeni tepe yaptıysa stop mumun kapanmasını beklemeden hemen yükselir
+        if p.get("iz"):
+            once = p["stop"]
+            iz_guncelle(p, {"h": anlik})
+            if p["stop"] > once and p.get("canli_t") != mumlar[-1]["t"]:
+                p["canli_t"], p["stop_mum_bas"] = mumlar[-1]["t"], once
         # süre sınırı (0 = yok); iz süren stop devredeyse kâr koşsun diye uygulanmaz
         if MAKS_BEKLEME_DK and not p.get("iz_aktif") and (simdi() - p["giris_zamani"]).total_seconds() >= MAKS_BEKLEME_DK * 60:
             return self.cik(p, anlik, "SURE DOLDU", maker=False)
@@ -1052,7 +1061,7 @@ def giris_bilgisi(coin, s, tur):
             "ort_hacim_tl": s.get("ort_hacim_tl", 0), "hacim24_mtl": HACIM24.get(coin, 0) / 1e6,
             "btc5": None if btc is None else round(btc, 2), "ort5": None if ort is None else round(ort, 2)}
 
-POZ_KONTROL_SN = 15        # açık pozisyonlar bu sıklıkla kontrol edilir (tam tarama dakikada bir)
+POZ_KONTROL_SN = 5         # açık pozisyonlar bu sıklıkla kontrol edilir (canlı stop için) (tam tarama dakikada bir)
 
 def pozisyonlari_kontrol():
     """Açık pozisyonların ve teyit bekleyen sinyallerin hızlı kontrolü (15 sn'de bir)."""
