@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kripto Demo Bot</title>
+<script src="https://telegram.org/js/telegram-web-app.js" onerror="void 0"></script>
+<style>
+  :root{
+    --bg: var(--tg-theme-bg-color, #0f1419);
+    --card: var(--tg-theme-secondary-bg-color, #1a2129);
+    --text: var(--tg-theme-text-color, #e7ecf1);
+    --hint: var(--tg-theme-hint-color, #8a96a3);
+    --accent: var(--tg-theme-button-color, #3b82f6);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --up: #22c55e; --down: #ef4444; --warn: #f59e0b;
+    --line: color-mix(in srgb, var(--hint) 22%, transparent);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       padding:14px 14px calc(96px + env(safe-area-inset-bottom));-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px}
+  .top h1{font-size:19px;font-weight:700;letter-spacing:-.2px}
+  .pills{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .pill{font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+  .pill i{width:7px;height:7px;border-radius:50%;background:currentColor;display:block}
+  .pill.on{color:var(--up);background:color-mix(in srgb,var(--up) 15%,transparent)}
+  .pill.off{color:var(--hint);background:color-mix(in srgb,var(--hint) 15%,transparent)}
+  .pill.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 15%,transparent)}
+  .sub{color:var(--hint);font-size:12.5px;margin-bottom:14px}
+  .note{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn);font-size:12.5px;padding:8px 11px;border-radius:10px;margin-bottom:14px}
+  .tabs{display:flex;background:var(--card);border-radius:12px;padding:3px;margin-bottom:12px}
+  .tabs button{flex:1;border:0;background:transparent;color:var(--hint);font-weight:600;font-size:13.5px;padding:9px 4px;border-radius:9px}
+  .tabs button.act{background:var(--accent);color:var(--accent-text)}
+  .card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px}
+  .label{color:var(--hint);font-size:12.5px}
+  .big{font-size:30px;font-weight:700;letter-spacing:-.5px;margin:2px 0}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .grid b{display:block;font-size:15.5px;font-weight:600;margin-top:1px}
+  h2{font-size:14px;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+  .mini{border:0;background:color-mix(in srgb,var(--down) 16%,transparent);color:var(--down);font-weight:600;font-size:12.5px;padding:6px 12px;border-radius:8px}
+  .pos-head{display:flex;justify-content:space-between;align-items:baseline}
+  .coin{font-size:18px;font-weight:700}
+  .bar{position:relative;height:8px;border-radius:4px;margin:16px 0 6px;
+       background:linear-gradient(90deg,color-mix(in srgb,var(--down) 55%,transparent),color-mix(in srgb,var(--hint) 30%,transparent) 40%,color-mix(in srgb,var(--up) 55%,transparent))}
+  .bar .dot{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;background:var(--text);border:3px solid var(--card);transform:translate(-50%,-50%)}
+  .bar .entry{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--text);opacity:.5}
+  .ends{display:flex;justify-content:space-between;font-size:12px;color:var(--hint)}
+  .empty{color:var(--hint);font-size:13.5px;text-align:center;padding:6px 0}
+  .tr{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+  .tr:first-of-type{border-top:0}
+  .ic{width:38px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:10.5px;letter-spacing:-.3px;font-weight:700;flex:none}
+  .ic.up{background:color-mix(in srgb,var(--up) 16%,transparent)} .ic.down{background:color-mix(in srgb,var(--down) 16%,transparent)}
+  .tr .mid{flex:1;min-width:0}
+  .tr .mid b{font-size:14.5px}
+  .tr .mid span{display:block;color:var(--hint);font-size:12px}
+  .tr .r{text-align:right;font-weight:600;font-size:14.5px}
+  .tr .r span{display:block;font-size:12px;font-weight:500}
+  .cmp-row{margin-bottom:10px}
+  .cmp-row:last-child{margin-bottom:0}
+  .cmp-top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+  .cmp-track{height:8px;border-radius:4px;background:color-mix(in srgb,var(--hint) 18%,transparent);position:relative;overflow:hidden}
+  .cmp-fill{position:absolute;top:0;bottom:0;border-radius:4px}
+  .foot{color:var(--hint);font-size:11.5px;text-align:center;margin-top:16px}
+
+  /* Alt eylem çubuğu */
+  .dock{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg) 92%,transparent);
+        backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);
+        padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .dock button{border:0;background:var(--card);border-radius:12px;padding:8px 2px 7px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11.5px;font-weight:600}
+  .dock button .e{font-size:19px;line-height:1}
+  .dock button:active{transform:scale(.96)}
+
+  /* Alt sayfa (seçim penceresi) */
+  .shade{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s}
+  .shade.open{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-radius:18px 18px 0 0;padding:16px 14px calc(18px + env(safe-area-inset-bottom));
+         transform:translateY(105%);transition:transform .22s ease}
+  .sheet.open{transform:none}
+  .sheet h3{font-size:16px;margin-bottom:4px}
+  .sheet p{color:var(--hint);font-size:12.5px;margin-bottom:12px}
+  .opts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .opts.one{grid-template-columns:1fr}
+  .opts button{border:1px solid var(--line);background:var(--bg);border-radius:11px;padding:12px 6px;font-weight:600;font-size:14px}
+  .opts button.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 18%,var(--bg))}
+  .go{width:100%;border:0;background:var(--accent);color:var(--accent-text);border-radius:12px;padding:13px;font-weight:700;margin-top:14px}
+  .go:disabled{opacity:.45}
+  .toast{position:fixed;left:50%;top:14px;transform:translateX(-50%) translateY(-200%);visibility:hidden;background:var(--text);color:var(--bg);
+         font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;transition:transform .25s;z-index:9;max-width:90%;text-align:center}
+  .toast.show{transform:translateX(-50%) translateY(0);visibility:visible}
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1>Kripto Demo Bot</h1>
+    <div class="pills"><span id="durum" class="pill off"><i></i>Durdu</span><span id="oto" class="pill on">Otomatik açık</span></div>
+  </div>
+  <div id="guncel" class="sub"></div>
+  <div id="not" class="note" hidden></div>
+
+  <div id="tabs" class="tabs"></div>
+  <div class="card" id="ozet"></div>
+  <div class="card" id="pozisyon"></div>
+  <div class="card" id="islemler"></div>
+  <div class="card" id="karsilastirma"></div>
+  <div class="foot">🧪 DEMO · Gerçek para kullanılmıyor · Komisyon ve kayma düşülmüş sonuçlar</div>
+
+  <nav class="dock">
+    <button data-act="tara"><span class="e">🔍</span>Tara</button>
+    <button data-act="al"><span class="e">🟢</span>Al</button>
+    <button data-act="sat"><span class="e">🔴</span>Sat</button>
+    <button data-act="oto" id="otoBtn"><span class="e">⏸</span>Otomatik</button>
+    <button data-act="yenile"><span class="e">🔄</span>Yenile</button>
+  </nav>
+
+  <div class="shade" id="shade"></div>
+  <div class="sheet" id="sheet"></div>
+  <div class="toast" id="toast"></div>
+
+<script>
+// ---------- Veri: bot, uygulamayı açan düğmenin adresine (#src=..&d=..) güncel özeti ekler ----------
+const ORNEK = {
+  u: Math.floor(Date.now()/1000) - 120, k: 50.58, s: 1, oto: 1, b: "", cl: ["BTC","ETH","BNB","SOL","XRP","AVAX","DOGE","ADA"],
+  p: [
+    {n:"A: %1,5 kâr / %1 zarar", b:5058, a:4998.6, q:126.4, c:58.2, w:5, t:8,
+     o:{c:"SOL", g:3590.10, h:3643.95, st:3554.20, f:3611.30}},
+    {n:"B: %2 kâr / %1 zarar", b:5058, a:4945.2, q:151.8, c:52.9, w:3, t:7, o:null}
+  ],
+  i: [
+    [0,"XRP",63.2,1.25,"KAR AL","14:32"],[1,"XRP",88.5,1.75,"KAR AL","14:32"],
+    [0,"DOGE",-66.1,-1.31,"ZARAR DURDUR","13:05"],[1,"DOGE",-67.4,-1.33,"ZARAR DURDUR","13:05"],
+    [0,"AVAX",62.8,1.25,"KAR AL","11:48"],[1,"AVAX",-12.6,-0.25,"SURE DOLDU","12:41"]
+  ]
+};
+
+const tg = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData !== undefined ? window.Telegram.WebApp : null;
+const telegramIcinde = !!(tg && tg.platform && tg.platform !== "unknown");
+if(tg){ try{ tg.ready(); tg.expand(); }catch(e){} }
+
+const P = new URLSearchParams(location.hash.slice(1));
+const KAYNAK = P.get("src") || "";        // kb = klavye düğmesi, menu = menü düğmesi, in = mesaj düğmesi
+function oku(){
+  try{
+    const h = P.get("d"); if(!h) return null;
+    const bytes = Uint8Array.from(atob(h.replace(/-/g,"+").replace(/_/g,"/")), ch => ch.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }catch(e){ return null; }
+}
+let V = oku();
+const notEl = document.getElementById("not");
+if(!V){
+  V = ORNEK;
+  notEl.hidden = false;
+  notEl.textContent = telegramIcinde
+    ? "Henüz veri gelmedi. 🔄 Yenile'ye bas; bot güncel verileri gönderince uygulamayı tekrar aç."
+    : "Önizleme: örnek veriler gösteriliyor. Düğmeler Telegram içinde botu yönetir.";
+}
+
+const fmt = (x,d=2) => x.toLocaleString("tr-TR",{minimumFractionDigits:d,maximumFractionDigits:d});
+const fp = x => fmt(x, Math.abs(x) >= 10000 ? 0 : (Math.abs(x) >= 10 ? 2 : (Math.abs(x) >= 0.01 ? 4 : 8)));
+const TL = x => fmt(x) + " TL";
+const USD = x => V.k ? fmt(x / V.k) + " $" : "";
+const isaret = x => (x > 0 ? "+" : "");
+const sinif = x => x > 0 ? "up" : (x < 0 ? "down" : "");
+const kisa = ad => ad.split(":")[0];
+
+function toast(t){ const el = document.getElementById("toast"); el.textContent = t; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"), 2200); }
+function titret(tur){ try{ tg && tg.HapticFeedback && (tur ? tg.HapticFeedback.notificationOccurred(tur) : tg.HapticFeedback.selectionChanged()); }catch(e){} }
+
+// ---------- Komutu bota gönder ----------
+function gonder(kod, aciklama){
+  titret("success");
+  if(tg && telegramIcinde && KAYNAK === "kb"){            // klavyedeki 📱 Uygulama ile açıldıysa: doğrudan bota gönder
+    try{ tg.sendData(kod); return; }catch(e){}
+  }
+  if(tg && telegramIcinde && V.b){                         // menüden / mesajdan açıldıysa: bot sohbetine kısa komutla dön
+    tg.openTelegramLink("https://t.me/" + V.b + "?start=" + encodeURIComponent(kod));
+    setTimeout(()=>{ try{ tg.close(); }catch(e){} }, 300);
+    return;
+  }
+  toast("Önizleme — gönderilecek komut: " + (aciklama || kod));
+}
+
+// ---------- Durum ----------
+const dk = Math.round((Date.now()/1000 - V.u) / 60);
+const calisiyor = V.s === 1 && dk < 15;
+const durumEl = document.getElementById("durum");
+durumEl.className = "pill " + (calisiyor ? "on" : "off");
+durumEl.innerHTML = "<i></i>" + (calisiyor ? "Çalışıyor" : "Durdu");
+const otoAcik = V.oto !== 0;
+const otoEl = document.getElementById("oto");
+otoEl.className = "pill " + (otoAcik ? "on" : "warn");
+otoEl.textContent = otoAcik ? "Otomatik açık" : "Otomatik kapalı";
+document.getElementById("otoBtn").innerHTML = otoAcik ? '<span class="e">⏸</span>Oto kapat' : '<span class="e">▶️</span>Oto aç';
+const saat = new Date(V.u*1000).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
+document.getElementById("guncel").textContent =
+  "Veri saati: " + saat + (dk >= 1 ? ` (${dk} dk önce)` : " (şimdi)") + (V.k ? ` · 1 $ = ${fmt(V.k)} TL` : "");
+
+// ---------- Çizim ----------
+let secili = 0;
+function ciz(){
+  const tabs = document.getElementById("tabs");
+  tabs.innerHTML = V.p.map((p,i) => `<button class="${i===secili?"act":""}" data-i="${i}">${kisa(p.n)} · ${(p.n.split(":")[1]||"").trim()}</button>`).join("");
+  tabs.querySelectorAll("button").forEach(b => b.onclick = () => { secili = +b.dataset.i; titret(); ciz(); });
+
+  const p = V.p[secili];
+  const net = p.a + p.q - p.b;
+  const oran = p.t ? Math.round(p.w / p.t * 100) : null;
+  document.getElementById("ozet").innerHTML = `
+    <div class="label">Net sonuç</div>
+    <div class="big ${sinif(net)}">${isaret(net)}${TL(net)}</div>
+    <div class="label">${isaret(net)}${USD(net)} · başlangıç ${TL(p.b)}</div>
+    <div class="grid">
+      <div><span class="label">Ana para</span><b>${TL(p.a)}</b></div>
+      <div><span class="label">Kasadaki kâr 🔒</span><b class="up">${TL(p.q)}</b></div>
+      <div><span class="label">Başarı oranı</span><b>${oran===null ? "–" : "%"+oran} <span class="label">(${p.w}/${p.t})</span></b></div>
+      <div><span class="label">Ödenen komisyon</span><b>${TL(p.c)}</b></div>
+    </div>`;
+
+  const o = p.o, posEl = document.getElementById("pozisyon");
+  if(!o){
+    posEl.innerHTML = `<h2>Açık pozisyon</h2><div class="empty">Açık pozisyon yok · sinyal bekleniyor</div>`;
+  }else{
+    const deg = (o.f / o.g - 1) * 100;
+    const yuzde = Math.min(100, Math.max(0, (o.f - o.st) / (o.h - o.st) * 100));
+    const giris = (o.g - o.st) / (o.h - o.st) * 100;
+    posEl.innerHTML = `
+      <h2>Açık pozisyon <button class="mini" id="hizliSat">🔴 Sat</button></h2>
+      <div class="pos-head"><span class="coin">${o.c}/TRY</span><span class="${sinif(deg)}" style="font-weight:600">${isaret(deg)}${fmt(deg)}%</span></div>
+      <div class="label">Giriş ${fp(o.g)} · Şimdi ${fp(o.f)}</div>
+      <div class="bar"><div class="entry" style="left:${giris}%"></div><div class="dot" style="left:${yuzde}%"></div></div>
+      <div class="ends"><span>🛑 Stop ${fp(o.st)}</span><span>🎯 Hedef ${fp(o.h)}</span></div>`;
+    document.getElementById("hizliSat").onclick = () => onayla(`${kisa(p.n)} · ${o.c} satılsın mı?`, "Hemen piyasa fiyatından (demo) satılır.", "sat_" + secili, "Evet, sat");
+  }
+
+  const liste = V.i.filter(r => r[0] === secili);
+  document.getElementById("islemler").innerHTML = `<h2>Son işlemler</h2>` + (liste.length ? liste.map(r => `
+      <div class="tr"><div class="ic ${sinif(r[2])}">${r[1].slice(0,4)}</div>
+        <div class="mid"><b>${r[1]}</b><span>${r[4].replace("KAR","KÂR").replace("SURE","SÜRE").replace("SATIS","SATIŞ")} · ${r[5]}</span></div>
+        <div class="r ${sinif(r[2])}">${isaret(r[2])}${TL(r[2])}<span>${isaret(r[3])}${fmt(r[3])}%</span></div></div>`).join("")
+    : `<div class="empty">Henüz işlem yok</div>`);
+
+  const netler = V.p.map(x => x.a + x.q - x.b);
+  const enBuyuk = Math.max(1, ...netler.map(Math.abs));
+  document.getElementById("karsilastirma").innerHTML = `<h2>Strateji karşılaştırması</h2>` + V.p.map((x,i) => {
+    const n = netler[i], w = Math.abs(n) / enBuyuk * 100;
+    return `<div class="cmp-row"><div class="cmp-top"><span>${x.n}</span><b class="${sinif(n)}">${isaret(n)}${TL(n)}</b></div>
+      <div class="cmp-track"><div class="cmp-fill" style="width:${w}%;left:0;background:${n>=0?"var(--up)":"var(--down)"}"></div></div></div>`;
+  }).join("");
+}
+
+// ---------- Alt sayfa ----------
+const shade = document.getElementById("shade"), sheet = document.getElementById("sheet");
+function ac(html){ sheet.innerHTML = html; shade.classList.add("open"); sheet.classList.add("open"); }
+function kapat(){ shade.classList.remove("open"); sheet.classList.remove("open"); }
+shade.onclick = kapat;
+
+function onayla(baslik, aciklama, kod, buton){
+  ac(`<h3>${baslik}</h3><p>${aciklama}</p><button class="go" id="evet">${buton}</button>`);
+  document.getElementById("evet").onclick = () => { kapat(); gonder(kod, baslik); };
+}
+
+function alSayfasi(){
+  const coinler = V.cl && V.cl.length ? V.cl : ORNEK.cl;
+  let coin = null, strateji = "x";
+  ac(`<h3>🟢 Sanal alış</h3><p>Coini ve stratejiyi seç. O anki fiyattan demo alış yapılır.</p>
+      <div class="opts" id="coinler">${coinler.map(c => `<button data-c="${c}">${c}</button>`).join("")}</div>
+      <p style="margin:14px 0 8px">Strateji</p>
+      <div class="opts one" id="str">
+        ${V.p.map((p,i) => `<button data-s="${i}">${p.n}</button>`).join("")}
+        <button data-s="x" class="sel">İkisiyle de</button>
+      </div>
+      <button class="go" id="alBtn" disabled>Coin seç</button>`);
+  const alBtn = document.getElementById("alBtn");
+  const guncelle = () => { alBtn.disabled = !coin; alBtn.textContent = coin ? `${coin} al` : "Coin seç"; };
+  sheet.querySelectorAll("#coinler button").forEach(b => b.onclick = () => {
+    sheet.querySelectorAll("#coinler button").forEach(x => x.classList.remove("sel")); b.classList.add("sel"); coin = b.dataset.c; titret(); guncelle(); });
+  sheet.querySelectorAll("#str button").forEach(b => b.onclick = () => {
+    sheet.querySelectorAll("#str button").forEach(x => x.classList.remove("sel")); b.classList.add("sel"); strateji = b.dataset.s; titret(); });
+  alBtn.onclick = () => { kapat(); gonder(`al_${coin}_${strateji}`, `${coin} al (${strateji === "x" ? "A+B" : kisa(V.p[+strateji].n)})`); };
+}
+
+function satSayfasi(){
+  const acik = V.p.map((p,i) => [p,i]).filter(([p]) => p.o);
+  if(!acik.length){ ac(`<h3>🔴 Sat</h3><p>Satılacak açık pozisyon yok.</p><button class="go" id="tamam">Tamam</button>`);
+    document.getElementById("tamam").onclick = kapat; return; }
+  ac(`<h3>🔴 Hangi pozisyon satılsın?</h3><p>Seçtiğin pozisyon hemen piyasa fiyatından (demo) kapanır.</p>
+      <div class="opts one">${acik.map(([p,i]) => {
+        const d = (p.o.f / p.o.g - 1) * 100;
+        return `<button data-i="${i}">${kisa(p.n)} · ${p.o.c} <span class="${sinif(d)}">${isaret(d)}${fmt(d)}%</span></button>`; }).join("")}</div>`);
+  sheet.querySelectorAll(".opts button").forEach(b => b.onclick = () => { kapat(); gonder("sat_" + b.dataset.i, "Sat: " + kisa(V.p[+b.dataset.i].n)); });
+}
+
+document.querySelectorAll(".dock button").forEach(b => b.onclick = () => {
+  titret();
+  const a = b.dataset.act;
+  if(a === "tara") gonder("tara", "Tara");
+  else if(a === "yenile") gonder("yenile", "Yenile");
+  else if(a === "al") alSayfasi();
+  else if(a === "sat") satSayfasi();
+  else if(a === "oto") onayla(otoAcik ? "Otomatik alış kapatılsın mı?" : "Otomatik alış açılsın mı?",
+       otoAcik ? "Bot yeni alış yapmaz; açık pozisyonların hedef/stop takibi sürer." : "Bot sinyal gelince kendisi sanal alış yapar.",
+       otoAcik ? "oto_0" : "oto_1", otoAcik ? "Kapat" : "Aç");
+});
+
+ciz();
+</script>
+</body>
+</html>
