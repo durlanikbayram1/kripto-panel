@@ -510,6 +510,42 @@ document.getElementById("sw").onclick=()=>{const a=V.oto!==0;
   onay(a?"Otomatik alım kapatılsın mı?":"Otomatik alım açılsın mı?",a?"Bot yeni alım yapmaz; açık pozisyonların takibi sürer.":"Sinyal gelince bot kendisi demo alım yapar.",a?"oto_0":"oto_1",a?"Kapat":"Aç",a);};
 
 ciz();
+
+/* ---- Canlı fiyat: uygulama açıkken fiyatlar birkaç saniyede bir doğrudan borsadan çekilir ---- */
+const BORSALAR=["https://api.binance.me","https://data-api.binance.vision","https://api.binance.com"];
+let borsa=0, sonCanli=0;
+async function getir(yol){
+  for(let t=0;t<BORSALAR.length;t++){
+    const i=(borsa+t)%BORSALAR.length;
+    try{ const ac=new AbortController(); const zt=setTimeout(()=>ac.abort(),4000);
+      const r=await fetch(BORSALAR[i]+yol,{cache:"no-store",signal:ac.signal}); clearTimeout(zt);
+      if(r.ok){ borsa=i; return await r.json(); }
+      if(r.status===400) return null;          // sembol bu borsada yok
+    }catch(e){}
+  }
+  return null;
+}
+async function fiyatlariCek(){
+  const coinler=[...new Set([...V.p.filter(p=>p.o).map(p=>p.o.c), ...V.r.map(r=>r[0])])];
+  if(!coinler.length) return {};
+  const sem=coinler.map(c=>c+"TRY"), sonuc={};
+  let j=await getir("/api/v3/ticker/price?symbols="+encodeURIComponent(JSON.stringify(sem)));
+  if(Array.isArray(j)) j.forEach(x=>sonuc[x.symbol]=+x.price);
+  else await Promise.all(sem.map(async s=>{const k=await getir("/api/v3/ticker/price?symbol="+s); if(k&&k.price) sonuc[s]=+k.price;}));
+  return sonuc;
+}
+async function canliGuncelle(){
+  if(ORNEKMI||document.hidden) return;
+  const f=await fiyatlariCek(); let degisti=false;
+  V.p.forEach(p=>{ if(p.o&&f[p.o.c+"TRY"]){ p.o.f=f[p.o.c+"TRY"]; degisti=true; } });
+  V.r.forEach(r=>{ if(f[r[0]+"TRY"]){ r[1]=f[r[0]+"TRY"]; degisti=true; } });
+  if(!degisti) return;
+  sonCanli=Date.now(); ciz();
+  const el=document.getElementById("liveT"); if(el){ document.getElementById("live").classList.remove("off");
+    el.textContent="Canlı · "+new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}); }
+}
+canliGuncelle(); setInterval(canliGuncelle,5000);
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) canliGuncelle(); });
 if(P.get("tab")) sekme(P.get("tab"));
 </script>
 </body>
