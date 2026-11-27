@@ -419,8 +419,9 @@ function ciz(){
     <div><span>SON TARAMA</span><b>${saatYaz(V.ls||V.u)}</b></div>
     <div><span>BAŞARI</span><b class="${p.t&&p.w/p.t>=.5?"up":""}">${p.t?"%"+Math.round(p.w/p.t*100):"–"}</b></div>
     <div><span>İŞLEM</span><b>${p.t} <small class="dm" style="font-size:10px">${p.w}K · ${p.t-p.w}Z</small></b></div>
-    <div><span>İZLENEN COİN</span><b>${V.n||"–"}</b></div><div><span>DOLAR KURU</span><b>${V.k?fmt(V.k):"–"}</b></div>
-    <div><span>ANA PARA</span><b>${fmt(p.a)}</b></div><div><span>KASADAKİ KÂR</span><b class="up">${fmt(p.q)}</b></div>`;
+    <div><span>TOPLAM KÂR · ${p.w} İŞLEM</span><b class="up">+${fmt(p.q)}</b><small class="up" style="display:block;font-size:10px">+%${fmt(p.q/p.b*100)}</small></div>
+    <div><span>TOPLAM ZARAR · ${p.t-p.w} İŞLEM</span><b class="${p.a<p.b?"dn":""}">${fmt(p.a-p.b)}</b><small class="${p.a<p.b?"dn":"dm"}" style="display:block;font-size:10px">${p.a<p.b?"-":""}%${fmt(Math.abs(p.a-p.b)/p.b*100)}</small></div>
+    <div><span>ANA PARA</span><b>${fmt(p.a)}</b></div><div><span>NET SONUÇ</span><b class="${cls(p.q+p.a-p.b)}">${isr(p.q+p.a-p.b)}${fmt(p.q+p.a-p.b)}</b><small class="${cls(p.q+p.a-p.b)}" style="display:block;font-size:10px">${isr(p.q+p.a-p.b)}%${fmt((p.q+p.a-p.b)/p.b*100)}</small></div>`;
   $("dpT").innerHTML=`Açık pozisyonlar · <em>${O.length}/${A.mp}</em>`;
   $("dp").innerHTML=O.length?O.map((o,i)=>{const d=(o.f/o.g-1)*100,k=karO(o);
     return `<div class="sr col"><div class="row" style="align-items:center"><div><b style="font-size:14px">${o.c}</b> <span class="dm" style="display:inline">· ${fmt(o.m||0)} → </span><b class="am">${fmt(deger(o))} TL</b></div><b class="${cls(k)}">${isr(k)}${fmt(k)} · ${isr(d)}${fmt(d)}%</b></div>
