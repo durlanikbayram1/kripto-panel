@@ -64,6 +64,9 @@
   .pr .v{text-align:right;font-weight:700} .pr .v small{display:block;font-size:9px;font-weight:400}
   .tot{display:flex;justify-content:space-between;align-items:center;border-top:1px dashed var(--ln2);margin-top:4px;padding-top:7px}
   .tot b{font-size:14px}
+  .kapr{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px;margin:4px 0;border:1px dashed var(--ln2);opacity:.85}
+  .kapr b{font-size:13px} .kapr small{display:block;font-size:9px;color:var(--dim);letter-spacing:.4px;margin-top:2px}
+  .kapr .v{text-align:right;font-weight:700}
   .canli{border:1px solid #7a5d12;background:rgba(255,197,61,.05);padding:8px;margin-bottom:6px}
   .canli .row{align-items:center}
   .canli span{font-size:9px;color:var(--dim);letter-spacing:.6px;display:block}
@@ -249,6 +252,11 @@ const A=V.ay; A.ka=A.ka??2; A.zs=A.zs??1; A.mp=A.mp??2; A.hs=A.hs||"dengeli"; A.
 const deger=o=>(o.m||0)*(1-0.0015)*o.f/o.g;      // eldeki coin miktarı × anlık fiyat
 const karO=o=>deger(o)-(o.m||0);                  // alış komisyonu dahil anlık kâr/zarar
 const acik=()=>V.o||(V.p||[]).filter(p=>p.o).map(p=>p.o);
+const aktif=()=>acik().filter(o=>!o.kap), kapanan=()=>acik().filter(o=>o.kap);
+const SEBEP={HEDEF:["🎯 HEDEFE ULAŞTI","up"],STOP:["🛑 STOP OLDU","dn"],SURE:["⏱ SÜRE DOLDU","am"]};
+// bot kuralıyla tahmini kapanış sonucu (komisyon dahil)
+const kapSonuc=o=>{const k=o.kap, mak=k.s==="HEDEF", cf=mak?k.f:k.f*(1-0.0005), oran=mak?0.001:0.0015;
+  return (o.m||0)*(1-0.0015)*cf/o.g*(1-oran)-(o.m||0);};
 
 const tgw=window.Telegram&&window.Telegram.WebApp, tg=tgw&&tgw.platform&&tgw.platform!=="unknown"?tgw:null;
 if(tg){ try{ tg.ready(); tg.expand(); tg.setHeaderColor&&tg.setHeaderColor("#000000"); tg.setBackgroundColor&&tg.setBackgroundColor("#000000"); }catch(e){} }
@@ -341,9 +349,16 @@ function mcCiz(){
     <p class="note" style="margin:6px 0 0">SON ${T.length} İŞLEMİNDEN RASTGELE ÖRNEKLEME · TAHMİN DEĞİLDİR</p>`;
 }
 
+function kapHTML(K){
+  return K.map(o=>{const s=SEBEP[o.kap.s]||[o.kap.s,"dm"], r=kapSonuc(o);
+    return `<div class="kapr"><div><b>${o.c}</b> <span class="${s[1]}" style="font-size:10px">${s[0]}</span>
+      <small>${fp(o.kap.f)} · ${o.kap.z} · BOT SATIŞI İŞLİYOR (≤15 SN)</small></div>
+      <div class="v ${cls(r)}">≈ ${isr(r)}${fmt(r)}<small class="dm">TAHMİNİ · KOM. DAHİL</small></div></div>`}).join("");
+}
+
 // ---------------- ekranlar ----------------
 function ciz(){
-  const p=V.p[0], O=acik(), top=p.a+p.q, net=top-p.b, pct=net/p.b*100;
+  const p=V.p[0], O=aktif(), K=kapanan(), top=p.a+p.q, net=top-p.b, pct=net/p.b*100;
   const dk=Math.round((Date.now()/1000-V.u)/60), calisiyor=V.s===1&&dk<15;
   $("sub").textContent=(ORNEKMI?"ÖNİZLEME · ":"DEMO AJAN · ")+(V.n||"–")+" TL ÇİFTİ · BİNANCE TR";
   if(!canliSon){ $("live").className="tg "+(calisiyor?"g":"r"); $("live").textContent=calisiyor?(dk<1?"● CANLI":"● "+dk+" DK ÖNCE"):"● DURDU"; }
@@ -377,7 +392,7 @@ function ciz(){
       <div><div class="t"><i style="left:8%;background:var(--red)"></i><i style="left:${yer(o.g)}%;background:var(--dim)"></i><i style="left:${yer(o.f)}%;background:var(--amb);width:3px"></i><i style="left:96%;background:var(--grn)"></i></div>
       <div class="lg"><span>stop ${fp(o.st)}</span><span>hedef ${fp(o.h)}</span></div></div>
       <div class="v ${cls(k)}">${isr(k)}${fmt(k)}<small>${isr(d)}${fmt(d)}%</small></div></div>`}).join("")
-    :`<div class="none">AÇIK POZİSYON YOK · OTORADAR FIRSAT KOLLUYOR</div>`);
+    :(K.length?"":`<div class="none">AÇIK POZİSYON YOK · OTORADAR FIRSAT KOLLUYOR</div>`))+kapHTML(K);
   $("komT").textContent="TOPLAM KOMİSYON · "+p.t+" İŞLEM"; $("kom").textContent=fmt(p.c)+" TL";
   mcCiz();
 
@@ -411,8 +426,9 @@ function ciz(){
     return `<div class="sr col"><div class="row" style="align-items:center"><div><b style="font-size:14px">${o.c}</b> <span class="dm" style="display:inline">· ${fmt(o.m||0)} → </span><b class="am">${fmt(deger(o))} TL</b></div><b class="${cls(k)}">${isr(k)}${fmt(k)} · ${isr(d)}${fmt(d)}%</b></div>
       <div class="lg" style="margin:0"><span>GİRİŞ ${fp(o.g)}</span><span>ŞİMDİ ${fp(o.f)}</span><span class="up">HEDEF ${fp(o.h)}</span><span class="dn">STOP ${fp(o.st)}</span></div>
       <button class="btn r" data-sat="${i}">✕ ${o.c} POZİSYONUNU KAPAT</button></div>`}).join("")
-    :`<div class="none">AÇIK POZİSYON YOK</div>`;
-  document.querySelectorAll("[data-sat]").forEach(b=>b.onclick=()=>{const i=+b.dataset.sat,o=acik()[i];
+    :(K.length?"":`<div class="none">AÇIK POZİSYON YOK</div>`);
+  $("dp").innerHTML+=kapHTML(K);
+  document.querySelectorAll("[data-sat]").forEach(b=>b.onclick=()=>{const i=+b.dataset.sat,o=aktif()[i];
     onay(`${o.c} KAPATILSIN MI?`,`Anlık piyasa fiyatından (demo) satılır · taker komisyonu %${fmt(FE.t)}`,"sat_"+i+"_"+o.c,"EVET, SAT",true);});
   const SB={"KAR AL":["HEDEF","up"],"ZARAR DURDUR":["STOP","dn"],"SURE DOLDU":["SÜRE","am"],"ELLE SATIS":["ELLE","dm"],"TEST BITTI":["KAPAN","dm"]};
   $("tx").innerHTML=V.i.length?V.i.map(r=>{const s=SB[r[4]]||[r[4],"dm"];
@@ -462,7 +478,7 @@ function onay(b,a,kod,btn,kirmizi){ac(`<h3>${b}</h3><p>${a}</p><button class="bt
   $("ev").onclick=()=>{kapat();gonder(kod,btn);}; $("vz").onclick=kapat;}
 function alSayfasi(){
   const fy=Object.fromEntries(V.r.map(r=>[r[0],r])), liste=(V.cl.length?V.cl:V.r.map(r=>r[0])).slice(0,12); let coin=null;
-  ac(`<h3>SANAL ALIM</h3><p>Coin seç · o anki fiyattan demo alım · ${acik().length}/${A.mp} pozisyon dolu<br>Hedef %${fmt(A.ka,1)} · Stop %${fmt(A.zs,1)} · Alış komisyonu %${fmt(FE.t)} + kayma %${fmt(FE.k)}</p>
+  ac(`<h3>SANAL ALIM</h3><p>Coin seç · o anki fiyattan demo alım · ${aktif().length}/${A.mp} pozisyon dolu<br>Hedef %${fmt(A.ka,1)} · Stop %${fmt(A.zs,1)} · Alış komisyonu %${fmt(FE.t)} + kayma %${fmt(FE.k)}</p>
     <div class="cg">${liste.map(c=>{const r=fy[c];return `<button data-c="${c}"><b>${c}</b><small class="${r?cls(r[2]):"dm"}">${r?isr(r[2])+fmt(r[2])+"%":"—"}</small></button>`}).join("")}</div>
     <button class="btn a" id="alb" disabled>COİN SEÇ</button>`);
   const alb=$("alb");
@@ -493,18 +509,46 @@ async function canliGuncelle(){
   if(Array.isArray(j)) j.forEach(x=>f[x.symbol]=+x.price);
   else await Promise.all(sem.map(async s=>{const k=await getir("/api/v3/ticker/price?symbol="+s); if(k&&k.price) f[s]=+k.price;}));
   let d=false;
-  acik().forEach(o=>{if(f[o.c+"TRY"]){o.f=f[o.c+"TRY"];d=true;}}); V.r.forEach(r=>{if(f[r[0]+"TRY"]){r[1]=f[r[0]+"TRY"];d=true;}});
+  acik().forEach(o=>{if(f[o.c+"TRY"]&&!o.kap&&!(o.kz&&Date.now()-o.kz<20000)){o.f=f[o.c+"TRY"];d=true;}}); V.r.forEach(r=>{if(f[r[0]+"TRY"]){r[1]=f[r[0]+"TRY"];d=true;}});
   if(!d) return; canliSon=Date.now();
-  $("live").className="tg g"; $("live").textContent="● CANLI";
+  $("live").className="tg g"; $("live").textContent="● CANLI"+(kaynakAd?" · "+kaynakAd:"");
   const once={}; document.querySelectorAll("[data-v]").forEach(e=>once[e.id||e.dataset.dv]=+e.dataset.v);
   const y=window.scrollY; ciz(); window.scrollTo(0,y);
   document.querySelectorAll("[data-v]").forEach(e=>{const k=e.id||e.dataset.dv, a=once[k], b=+e.dataset.v;
     if(a!=null&&Math.abs(b-a)>=0.01){ e.classList.add(b>a?"fu":"fd"); }});
 }
+const MUMKAYNAK=[["https://api.binance.me","/api/v1/klines","TR"],["https://data-api.binance.vision","/api/v3/klines","GLOBAL"],["https://api.binance.com","/api/v3/klines","GLOBAL"]];
+let mumK=0, kaynakAd="";
+async function mumCek(sym,ek){
+  for(let t=0;t<MUMKAYNAK.length;t++){ const i=(mumK+t)%MUMKAYNAK.length, [h,y,ad]=MUMKAYNAK[i];
+    try{ const c=new AbortController(), z=setTimeout(()=>c.abort(),4000);
+      const r=await fetch(`${h}${y}?symbol=${sym}&interval=1m&${ek}`,{cache:"no-store",signal:c.signal}); clearTimeout(z);
+      if(!r.ok) continue; let j=await r.json(); if(!Array.isArray(j)) j=j.data||j.list||[];
+      if(!Array.isArray(j)) continue; mumK=i; kaynakAd=ad;
+      return j.map(x=>({t:+x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5]})); }catch(e){} }
+  return null;
+}
 async function mumGetir(){
   if(ORNEKMI||document.hidden||!secCoin) return;
-  const k=await getir(`/api/v3/klines?symbol=${secCoin}TRY&interval=1m&limit=48`);
-  if(Array.isArray(k)&&k.length){ MUM[secCoin]=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5]})); mumCiz(); }
+  const k=await mumCek(secCoin+"TRY","limit=48");
+  if(k&&k.length){ MUM[secCoin]=k; mumCiz(); }
+}
+// Pozisyon kapanışını uygulama da botun kuralıyla takip eder: girişten sonraki 1 dk mumlarında
+// en düşük stopa değdiyse STOP, en yüksek hedefe değdiyse HEDEF (bot da tam olarak böyle karar verir).
+async function kapanisKontrol(){
+  if(ORNEKMI||document.hidden) return;
+  let degisti=false;
+  for(const o of acik()){
+    if(o.kap||!o.t) continue;
+    const m=await mumCek(o.c+"TRY",`startTime=${o.t+1}&limit=200`); if(!m||!m.length) continue;
+    o.kz=Date.now(); o.f=m[m.length-1].c; degisti=true;
+    const saat=x=>new Date(x).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
+    for(const k of m){ if(k.t<=o.t) continue;
+      if(k.l<=o.st){ o.kap={s:"STOP",f:o.st,z:saat(k.t)}; break; }
+      if(k.h>=o.h){ o.kap={s:"HEDEF",f:o.h,z:saat(k.t)}; break; } }
+    if(!o.kap&&o.gz&&Date.now()/1000-o.gz>=A.sure*60) o.kap={s:"SURE",f:o.f,z:saat(Date.now())};
+  }
+  if(degisti){ const y=window.scrollY; ciz(); window.scrollTo(0,y); }
 }
 if(ORNEKMI){ // önizleme için örnek mumlar
   for(const c of ["AVAX","RENDER"]){const o=ORNEK.o.find(x=>x.c===c);let p=o.g*0.995;const m=[];
@@ -512,9 +556,9 @@ if(ORNEKMI){ // önizleme için örnek mumlar
     m[47].c=o.f; MUM[c]=m;}
 }
 ciz();
-canliGuncelle(); mumGetir();
-setInterval(canliGuncelle,5000); setInterval(mumGetir,15000);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden){canliGuncelle();mumGetir();}});
+canliGuncelle(); mumGetir(); kapanisKontrol();
+setInterval(canliGuncelle,5000); setInterval(mumGetir,15000); setInterval(kapanisKontrol,5000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){canliGuncelle();mumGetir();kapanisKontrol();}});
 </script>
 </body>
 </html>
