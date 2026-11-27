@@ -268,7 +268,7 @@ let V=await oku(); const ORNEKMI=!V; if(!V) V=ORNEK;
 V.ay=V.ay||{}; V.r=V.r||[]; V.cl=V.cl||[]; V.i=V.i||[]; V.kr=V.kr||{e:0.8,h:3}; V.fn=V.fn||null; V.kl=V.kl||[];
 const FE={t:0.15,m:0.10,k:0.05};
 try{ const bk=JSON.parse(localStorage.getItem("bekleyenAyar")||"{}"); for(const k in bk){ if(bk[k].t>V.u-5) V.ay[k]=bk[k].v; } }catch(e){}
-const A=V.ay; A.cm=A.cm||"oto"; A.ib=A.ib??1.5; A.im=A.im??0.75; A.ka=A.ka??2; A.zs=A.zs??1; A.mp=A.mp??2; A.hs=A.hs||"dengeli"; A.sure=A.sure??0; A.zl=A.zl??0; A.oz=A.oz??4;
+const A=V.ay; A.cm=A.cm||"takip"; A.tm=A.tm??0; A.mb=A.mb??1; A.ib=A.ib??1.5; A.im=A.im??0.75; A.ka=A.ka??2; A.zs=A.zs??1; A.mp=A.mp??2; A.hs=A.hs||"dengeli"; A.sure=A.sure??0; A.zl=A.zl??0; A.oz=A.oz??4;
 const deger=o=>(o.m||0)*(1-0.0015)*o.f/o.g;      // eldeki coin miktarı × anlık fiyat
 const karO=o=>deger(o)-(o.m||0);                  // alış komisyonu dahil anlık kâr/zarar
 const STR=[["momentum","🚀","MOMENTUM","Ani sıçramaları yakalar"],["grid","🧱","GRID","BTC/ETH merdiven limit emir"],["dip","🎣","DİPTEN ALIM","Aşırı düşüşte limit alış"]];
@@ -346,7 +346,7 @@ function mumCiz(){
     s+=`<line x1="${x}" x2="${x}" y1="${y(k.h)}" y2="${y(k.l)}" stroke="${col}" stroke-width="1"/><rect x="${x-w*.32}" y="${y(Math.max(k.o,k.c))}" width="${w*.64}" height="${Math.max(1,Math.abs(y(k.o)-y(k.c)))}" fill="${col}"/><rect x="${x-w*.32}" y="${190-k.v/vm*32}" width="${w*.64}" height="${k.v/vm*32}" fill="${col}" opacity=".45"/>`;});
   const ln=(v,col)=>{const dis=yh(v)<4?"▲ ":yh(v)>H-4?"▼ ":"";
     return `<line x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="${col}" stroke-dasharray="${dis?"1 4":"4 3"}" stroke-width="1"/><rect x="${W+2}" y="${y(v)-7}" width="56" height="14" fill="#000" stroke="${col}"/><text x="${W+30}" y="${y(v)+3.5}" fill="${col}" font-size="${dis?8:9}" text-anchor="middle" font-family="ui-monospace,Menlo">${dis}${fp(v)}</text>`;};
-  if(o) s+=(o.ia&&!o.oto?"":ln(o.h,"#27d17f"))+ln(o.g,"#6f737b")+ln(o.st,o.st>=o.g?"#b7d63c":"#ff4d5e");
+  if(o) s+=((o.ia&&!o.oto)||o.tk?"":ln(o.h,"#27d17f"))+ln(o.g,"#6f737b")+ln(o.st,o.st>=o.g?"#b7d63c":"#ff4d5e");
   s+=ln(c[N-1].c,"#ffc53d");
   svg.innerHTML=s;
 }
@@ -430,7 +430,7 @@ function ciz(){
     (O.length?O.map(o=>{const yer=v=>Math.max(2,Math.min(98,8+(v-o.st)/(o.h-o.st)*88)),k=karO(o),d=(o.f/o.g-1)*100;
     return `<div class="pr"><div class="c">${o.c}<small>${strBilgi((V.p[o.s||0]||{}).tr)[1]} ${fmt(o.m||0,0)} TL${o.gk?" · B"+o.gk:""}</small><em data-dv="${o.c}" data-v="${deger(o).toFixed(2)}">${fmt(deger(o))}</em></div>
       <div><div class="t"><i style="left:8%;background:var(--red)"></i><i style="left:${yer(o.g)}%;background:var(--dim)"></i><i style="left:${yer(o.f)}%;background:var(--amb);width:3px"></i><i style="left:96%;background:var(--grn)"></i></div>
-      <div class="lg"><span>${o.ia?"iz stop":"stop"} ${fp(o.st)}</span><span>${o.oto?(o.ia?"tepe "+fp(o.tp||o.f)+" · ":"")+"tahmin "+fp(o.h):o.iz?(o.ia?"tepe "+fp(o.tp||o.f):"iz "+fp(o.h)):"hedef "+fp(o.h)}</span></div></div>
+      <div class="lg"><span>${o.ia?"iz stop":"stop"} ${fp(o.st)}</span><span>${o.tk?"tepe "+fp(o.tp||o.g):o.oto?(o.ia?"tepe "+fp(o.tp||o.f)+" · ":"")+"tahmin "+fp(o.h):o.iz?(o.ia?"tepe "+fp(o.tp||o.f):"iz "+fp(o.h)):"hedef "+fp(o.h)}</span></div></div>
       <div class="v ${cls(k)}">${isr(k)}${fmt(k)}<small>${isr(d)}${fmt(d)}%</small></div></div>`}).join("")
     :(K.length?"":`<div class="none">AÇIK POZİSYON YOK · OTORADAR FIRSAT KOLLUYOR</div>`))+kapHTML(K);
   $("komT").textContent="TOPLAM KOMİSYON · "+p.t+" İŞLEM"; $("kom").textContent=fmt(p.c)+" TL";
@@ -442,7 +442,7 @@ function ciz(){
   $("otoT").textContent=ac?"OTOMATİK ALIM AÇIK":"OTOMATİK ALIM KAPALI";
   $("otoS").textContent=ac?"Sinyal gelince bot kendisi demo alım yapar":"Bot sadece izliyor, alım yapmıyor";
   $("sw").className="sw"+(ac?" on":"");
-  $("kural").innerHTML=`<span class="tg a">5DK ≥ +%${fmt(V.kr.e,1)}</span><span class="tg a">HACİM ≥ ${fmt(V.kr.h,0)}x</span>${A.cm==="oto"?`<span class="tg g">OTO İZ</span>`+((A.tey??1)?`<span class="tg d">TEYİT</span>`:""):A.cm==="iz"?`<span class="tg g">İZ +%${fmt(A.ib)} / %${fmt(A.im)}</span>`:`<span class="tg g">HEDEF %${fmt(A.ka,1)}</span>`}<span class="tg r">STOP %${fmt(A.zs,1)}</span><span class="tg d">MAKS ${A.mp} POZ.</span>`+
+  $("kural").innerHTML=`<span class="tg a">5DK ≥ +%${fmt(V.kr.e,1)}</span><span class="tg a">HACİM ≥ ${fmt(V.kr.h,0)}x</span>${(A.mb??1)?`<span class="tg g">🐂 SADECE YÜKSELİŞTE</span>`:""}${A.cm==="takip"?`<span class="tg g">TAKİP ${A.tm?"%"+fmt(A.tm/100):"OTO"}</span>`+((A.tey??1)?`<span class="tg d">TEYİT</span>`:""):A.cm==="oto"?`<span class="tg g">OTO İZ</span>`+((A.tey??1)?`<span class="tg d">TEYİT</span>`:""):A.cm==="iz"?`<span class="tg g">İZ +%${fmt(A.ib)} / %${fmt(A.im)}</span>`:`<span class="tg g">HEDEF %${fmt(A.ka,1)}</span>`}${A.cm==="takip"?"":`<span class="tg r">STOP %${fmt(A.zs,1)}</span>`}<span class="tg d">MAKS ${A.mp} POZ.</span>`+
     ((A.bs??1)?`<span class="tg g">BAŞABAŞ</span>`:"")+((A.gec??1)?`<span class="tg d">≤%2 SIÇRAMA</span>`:"")+((A.fit??1)?`<span class="tg d">FİTİL &lt;%30</span>`:"")+((A.lik??1)?`<span class="tg d">LİKİDİTE</span>`:"");
   $("gN").textContent=(V.n||V.r.length)+" İZLENİYOR";
   $("grid").innerHTML=V.r.length?V.r.slice().sort((a,b)=>b[2]-a[2]).map(r=>{const a=Math.min(.55,Math.abs(r[2]/V.kr.e)*.35+.05);
@@ -466,7 +466,7 @@ function ciz(){
   $("dpT").innerHTML=`Açık pozisyonlar · <em>${O.length} açık</em>`;
   $("dp").innerHTML=O.length?O.map((o,i)=>{const d=(o.f/o.g-1)*100,k=karO(o);
     return `<div class="sr col"><div class="row" style="align-items:center"><div><b style="font-size:14px">${o.c}</b><span class="stg">${strBilgi((V.p[o.s||0]||{}).tr)[2]}${o.gk?" B"+o.gk:""}</span> <span class="dm" style="display:inline">· ${fmt(o.m||0)} → </span><b class="am">${fmt(deger(o))} TL</b></div><b class="${cls(k)}">${isr(k)}${fmt(k)} · ${isr(d)}${fmt(d)}%</b></div>
-      <div class="lg" style="margin:0"><span>GİRİŞ ${fp(o.g)}</span><span>ŞİMDİ ${fp(o.f)}</span><span class="up">${o.oto?"TAHMİN "+fp(o.h)+(o.th?" (+%"+fmt(o.th)+")":""):o.iz?(o.ia?"TEPE "+fp(o.tp||o.f):"İZ BAŞLAR "+fp(o.h)):"HEDEF "+fp(o.h)}</span><span class="${o.st>=o.g?"am":"dn"}">${o.ia?"İZ STOP":(o.st>=o.g?"BAŞABAŞ":"STOP")} ${fp(o.st)}</span></div>
+      <div class="lg" style="margin:0"><span>GİRİŞ ${fp(o.g)}</span><span>ŞİMDİ ${fp(o.f)}</span><span class="up">${o.tk?"TEPE "+fp(o.tp||o.g)+" · %"+fmt(o.im||0)+" GERİDEN":o.oto?"TAHMİN "+fp(o.h)+(o.th?" (+%"+fmt(o.th)+")":""):o.iz?(o.ia?"TEPE "+fp(o.tp||o.f):"İZ BAŞLAR "+fp(o.h)):"HEDEF "+fp(o.h)}</span><span class="${o.st>=o.g?"am":"dn"}">${o.ia?(o.tk?"KÂR KİLİDİ":"İZ STOP"):(o.st>=o.g?"BAŞABAŞ":(o.tk?"TAKİP STOP":"STOP"))} ${fp(o.st)}</span></div>
       <button class="btn r" data-sat="${i}">✕ ${o.c} POZİSYONUNU KAPAT</button></div>`}).join("")
     :(K.length?"":`<div class="none">AÇIK POZİSYON YOK</div>`);
   $("dp").innerHTML+=kapHTML(K);
@@ -483,9 +483,16 @@ function ciz(){
   $("aS").innerHTML=`<div class="sr col"><div>HASSASİYET<span>Alım sinyali için gereken 5 dk sıçrama ve hacim</span></div>
       ${pl("hs",[["temkinli","TEMKİNLİ","%1,0·4x"],["dengeli","DENGELİ","%0,8·3x"],["atak","ATAK","%0,5·2x"]],A.hs)}</div>
     <div class="sr col"><div>SÜRE SINIRI<span>${A.sure?"Stop/hedef olmazsa bu süre sonunda satılır":"Yok · pozisyon sadece stop veya hedefle kapanır"}</span></div>${pl("sure",[[0,"YOK"],[60,"1 SAAT"],[120,"2 SAAT"],[240,"4 SAAT"]],A.sure)}</div>`;
-  const IZ=A.cm==="iz", OTO=A.cm==="oto";
-  $("aK").innerHTML=`<div class="sr col"><div>ÇIKIŞ YÖNTEMİ<span>${OTO?"Bot stopu kâra göre kendisi ayarlar · hedefi tahmin eder":IZ?"Kâr büyüdükçe stop sabit mesafeyle taşınır":"Belirlenen kâr hedefinde satılır"}</span></div>
-      <div class="pl"><button class="${OTO?"on":""}" data-cm="oto">OTO İZ<small>önerilen</small></button><button class="${IZ?"on":""}" data-cm="iz">İZ SÜREN<small>sabit mesafe</small></button><button class="${!IZ&&!OTO?"on":""}" data-cm="sabit">SABİT<small>%${fmt(A.ka,1)}'de sat</small></button></div></div>`+
+  const IZ=A.cm==="iz", OTO=A.cm==="oto", TK=A.cm==="takip";
+  const ornT=[[0.2,"+%0,20"],[1,"+%1"],[2,"+%2"],[5,"+%5"]], ornM=A.tm?A.tm/100:1;
+  const cmHTML=`<div class="sr col"><div>ÇIKIŞ YÖNTEMİ<span>${TK?"Stop hep tepenin altında durur, sadece yukarı çıkar · sabit hedef yok":OTO?"Bot stopu kâra göre kendisi ayarlar · hedefi tahmin eder":IZ?"Kâr büyüdükçe stop sabit mesafeyle taşınır":"Belirlenen kâr hedefinde satılır"}</span></div>
+      <div class="pl"><button class="${TK?"on":""}" data-cm="takip">TAKİP<small>önerilen</small></button><button class="${OTO?"on":""}" data-cm="oto">OTO İZ<small>kâr kilidi</small></button><button class="${IZ?"on":""}" data-cm="iz">İZ SÜREN<small>sabit mesafe</small></button><button class="${!IZ&&!OTO&&!TK?"on":""}" data-cm="sabit">SABİT<small>%${fmt(A.ka,1)}'de sat</small></button></div></div>`;
+  $("aK").innerHTML=TK?cmHTML+`<div class="sr col"><div>TAKİP MESAFESİ<span>Stop, görülen en yüksek fiyatın bu kadar altında durur · başlangıç stopu da bu kadar</span></div>
+      ${pl("tm",[[0,"OTO","oynaklık"],[75,"%0,75"],[100,"%1"],[150,"%1,5"],[200,"%2"]],A.tm??0)}</div>
+    <div class="sr col"><div>ÖRNEK · MESAFE %${fmt(ornM)}${A.tm?"":" (oto: coine göre %0,7–2)"}<span>Stop sadece yukarı çıkar, fiyat düşünce geri inmez</span></div>
+      <table class="tx">${ornT.map(([k,e])=>{const st=k-ornM; return `<tr><td class="dm">tepe ${e}</td><td>→ stop</td><td class="${st>=0.4?"up":st>=0?"am":"dn"}"><b>${st>=0?"+":"-"}%${fmt(Math.abs(st))}</b></td><td class="dm">${st>=0.4?"kâr kilitli":st>=0?"≈ başa baş":"zarar sınırı"}</td></tr>`}).join("")}</table></div>
+    <p class="note" style="margin:0 0 8px;text-align:left">Alış+satış komisyonu ve kayma ≈ %0,4. Fiyat mesafe + %0,4 yükselince işlem artık zararla kapanmaz. Kazanan işlem stop'a çarpana kadar açık kalır.</p>`
+   :cmHTML+
     (OTO?`<div class="sr col"><div>OTOMATİK KİLİT<span>Fiyat her yeni tepe yaptığında stop kendiliğinden yükselir</span></div>
       <table class="tx">${[[1,"+%1"],[2,"+%2"],[3,"+%3"],[5,"+%5"]].map(([k,e])=>`<tr><td class="dm">tepe ${e}</td><td>→ stop</td><td class="up"><b>+%${fmt(otoKilit(k))}</b></td><td class="dm">kârın %${Math.round(otoKilit(k)/k*100)}'i</td></tr>`).join("")}
       <tr><td class="dm">tahmini hedef</td><td>→ stop</td><td class="am"><b>kârın %90'ı</b></td><td class="dm">sıkılaşır</td></tr></table></div>`:"")+
@@ -501,7 +508,8 @@ function ciz(){
                         :`<div><span>KAZANÇ/RİSK</span><b class="am" id="rrV"></b></div><div><span>NET KÂR</span><b class="up" id="nkV"></b></div>`}<div><span>NET ZARAR</span><b class="dn" id="nzV"></b></div></div>
     ${OTO?`<p class="note" style="margin:0 0 8px;text-align:left">Değerler komisyon öncesi brüt kilit; net kâr yaklaşık %0,4 daha düşüktür. Bot her alımda oynaklık, sıçrama gücü ve yakın dirençten bir hedef tahmin eder.</p>`:IZ?`<p class="note" style="margin:0 0 8px;text-align:left">Yükseliş sürdükçe pozisyon açık kalır; üst sınır yok. Çıkış piyasa emriyle olur (komisyon %${fmt(FE.t)}).</p>`:""}
     <button class="btn a" id="kzK" disabled>KAYDET</button>`;
-  document.querySelectorAll("[data-cm]").forEach(b=>b.onclick=()=>{ if(b.classList.contains("on")) return; gonder("ayar_cm_"+b.dataset.cm, b.dataset.cm==="iz"?"İZ SÜREN STOP":"SABİT HEDEF"); });
+  document.querySelectorAll("[data-cm]").forEach(b=>b.onclick=()=>{ if(b.classList.contains("on")) return; gonder("ayar_cm_"+b.dataset.cm, {iz:"İZ SÜREN STOP",takip:"TAKİP EDEN STOP",oto:"OTO İZ"}[b.dataset.cm]||"SABİT HEDEF"); });
+  if(!TK){
   const zsR=$("zsR"),kzK=$("kzK"),kaR=$("kaR"),ibR=$("ibR"),imR=$("imR");
   const kzG=()=>{const zs=+zsR.value; zsR.style.setProperty("--p",(zs-.5)/4.5*100+"%"); $("zsV").textContent="%"+fmt(zs,1);
     $("nzV").textContent="≈%"+fmt(zs+FE.t*2+FE.k);
@@ -516,17 +524,18 @@ function ciz(){
   [zsR,kaR,ibR,imR].forEach(x=>{ if(x) x.oninput=()=>{kzG();tit();}; }); kzG();
   kzK.onclick=()=>OTO?gonder("ayar_kz_"+Math.round(A.ka*10)+"-"+Math.round(zsR.value*10),`STOP %${fmt(+zsR.value,1)}`):IZ?gonder("ayar_iz_"+Math.round(ibR.value*10)+"-"+Math.round(imR.value*100)+"-"+Math.round(zsR.value*10),`İZ +%${fmt(+ibR.value)} · MESAFE %${fmt(+imR.value)} · STOP %${fmt(+zsR.value,1)}`)
                      :gonder("ayar_kz_"+Math.round(kaR.value*10)+"-"+Math.round(zsR.value*10),`KÂR %${fmt(+kaR.value,1)} · ZARAR %${fmt(+zsR.value,1)}`);
+  }
   const sw=(k,b,a,ac)=>`<div class="sr"><div>${b}<span>${a}</span></div><button class="sw ${ac?"on":""}" data-st="${k}"></button></div>`;
-  $("aSt").innerHTML=STR.map(([tr,ik,ad,ac],i)=>sw(tr[0],ik+" "+ad,ac+(tr==="grid"?" · kâr her basamak turunda":tr==="dip"?" · ortalamaya dönüşte sat":" · oto iz ile çıkış"),(V.p[i]||{}).on!==0)).join("")+
+  $("aSt").innerHTML=STR.map(([tr,ik,ad,ac],i)=>sw(tr[0],ik+" "+ad,ac+(tr==="grid"?" · kâr her basamak turunda":tr==="dip"?" · ortalamaya dönüşte sat":(A.cm==="takip"?" · takip eden stop ile çıkış":" · oto iz ile çıkış")),(V.p[i]||{}).on!==0)).join("")+
     `<div class="sr"><div>🐻 PİYASA REJİMİ FİLTRESİ<span>BTC ve piyasa düşüşteyse hiçbir strateji yeni alım yapmaz · simülasyonda çöküş zararını ~%85 azalttı</span></div><button class="sw ${(A.rej??1)?"on":""}" data-rj="1"></button></div>`;
   document.querySelectorAll("[data-st]").forEach(b=>b.onclick=()=>{const k=b.dataset.st,on=b.classList.contains("on"); gonder("ayar_st_"+k+(on?0:1),(on?"DURDURULDU":"AÇILDI"));});
   document.querySelector("[data-rj]").onclick=()=>{const a=(A.rej??1)?1:0; gonder("ayar_rej_"+(a?0:1),a?"REJİM FİLTRESİ KAPALI":"REJİM FİLTRESİ AÇIK");};
-  const fe=V.fe||{}, ftop=(fe.fit||0)+(fe.gec||0)+(fe.lik||0)+(fe.tey||0)+(fe.pot||0)+(fe.rej||0);
+  const fe=V.fe||{}, ftop=(fe.fit||0)+(fe.gec||0)+(fe.lik||0)+(fe.tey||0)+(fe.pot||0)+(fe.rej||0)+(fe.mb||0);
   $("feT").textContent="BUGÜN "+ftop+" SİNYAL ELENDİ";
   const fs=(k,b,a,say)=>`<div class="sr"><div>${b}${say!=null?` <span class="tg d" style="display:inline-block;margin:0">${say} elendi</span>`:""}<span>${a}</span></div><button class="sw ${A[k]??1?"on":""}" data-f="${k}"></button></div>`;
-  $("aF").innerHTML=fs("tey","GİRİŞ TEYİDİ","Sinyalden sonraki mum sıçramayı korursa alınır · tepeden alımı azaltır",fe.tey||0)+
+  $("aF").innerHTML=fs("mb","MOMENTUM SADECE YÜKSELİŞTE","Piyasa yatay veya düşüşteyken momentum yeni alım yapmaz · yatayda sıçramalar genelde geri döner",fe.mb||0)+fs("tey","GİRİŞ TEYİDİ","Sinyalden sonraki mum sıçramayı korursa alınır · tepeden alımı azaltır",fe.tey||0)+
     fs("pot","POTANSİYEL FİLTRESİ","Tahmini hareket %1'den azsa alınmaz · komisyonu karşılamaz",fe.pot||0)+
-    fs("bs","BAŞABAŞ STOP",OTO?"Oto iz modunda gerekmez (oto iz +%1'de zaten +%0,5 kilitler)":"+%1 kâra geçince stop girişin üstüne çekilir · zararla kapanmaz")+
+    fs("bs","BAŞABAŞ STOP",A.cm==="takip"?"Takip modunda gerekmez (stop fiyatla birlikte yükselir)":OTO?"Oto iz modunda gerekmez (oto iz +%1'de zaten +%0,5 kilitler)":"+%1 kâra geçince stop girişin üstüne çekilir · zararla kapanmaz")+
     fs("gec","GEÇ GİRİŞ FİLTRESİ","5 dk'da %2'den fazla yükselmiş coin alınmaz",fe.gec||0)+
     fs("fit","ÜST FİTİL FİLTRESİ","Giriş mumunda uzun üst fitil (≥%30) varsa alınmaz",fe.fit||0)+
     fs("lik","LİKİDİTE FİLTRESİ","Dakikada 20.000 TL'den az işlem gören coin alınmaz",fe.lik||0);
@@ -555,7 +564,7 @@ function onay(b,a,kod,btn,kirmizi){ac(`<h3>${b}</h3><p>${a}</p><button class="bt
   $("ev").onclick=()=>{kapat();gonder(kod,btn);}; $("vz").onclick=kapat;}
 function alSayfasi(){
   const fy=Object.fromEntries(V.r.map(r=>[r[0],r])), liste=(V.cl.length?V.cl:V.r.map(r=>r[0])).slice(0,12); let coin=null;
-  ac(`<h3>SANAL ALIM</h3><p>Coin seç · o anki fiyattan demo alım · ${aktif().length}/${A.mp} pozisyon dolu<br>${A.cm==="oto"?`Oto iz · bot hedefi tahmin eder`:A.cm==="iz"?`İz süren stop +%${fmt(A.ib)}'den`:`Hedef %${fmt(A.ka,1)}`} · Stop %${fmt(A.zs,1)} · Alış komisyonu %${fmt(FE.t)} + kayma %${fmt(FE.k)}</p>
+  ac(`<h3>SANAL ALIM</h3><p>Coin seç · o anki fiyattan demo alım · ${aktif().length}/${A.mp} pozisyon dolu<br>${A.cm==="takip"?`Takip stop · tepenin ${A.tm?"%"+fmt(A.tm/100):"oynaklığa göre %0,7–2"} altı`:A.cm==="oto"?`Oto iz · bot hedefi tahmin eder`:A.cm==="iz"?`İz süren stop +%${fmt(A.ib)}'den`:`Hedef %${fmt(A.ka,1)}`}${A.cm==="takip"?"":" · Stop %"+fmt(A.zs,1)} · Alış komisyonu %${fmt(FE.t)} + kayma %${fmt(FE.k)}</p>
     <div class="cg">${liste.map(c=>{const r=fy[c];return `<button data-c="${c}"><b>${c}</b><small class="${r?cls(r[2]):"dm"}">${r?isr(r[2])+fmt(r[2])+"%":"—"}</small></button>`}).join("")}</div>
     <button class="btn a" id="alb" disabled>COİN SEÇ</button>`);
   const alb=$("alb");
@@ -626,9 +635,10 @@ async function kapanisKontrol(){
       if(!o.iz&&k.h>=o.h){ o.kap={s:"HEDEF",f:o.h,z:saat(k.t)}; break; }
       if(i<m.length-1){                       // kapanmış mum: stop yükseltmeleri
         tepe=Math.max(tepe,k.h);
-        if(o.oto){ const kl=otoKilit((tepe/o.g-1)*100,o.th); if(kl!=null){ const y=o.g*(1+kl/100); if(y>stop){stop=y;ia=true;} } }
+        if(o.tk){ const y=tepe*(1-izm); if(y>stop){ stop=y; if(y>=o.g*1.004) ia=true; } }
+        else if(o.oto){ const kl=otoKilit((tepe/o.g-1)*100,o.th); if(kl!=null){ const y=o.g*(1+kl/100); if(y>stop){stop=y;ia=true;} } }
         else if(o.iz&&tepe>=o.h){ const y=tepe*(1-izm); if(y>stop){stop=y;ia=true;} }
-        if(bsAcik&&!o.oto&&!ia&&!bs&&(tepe/o.g-1)*100>=1){ const y=o.g*1.004; if(y>stop){stop=y;bs=true;} }
+        if(bsAcik&&!o.oto&&!o.tk&&!ia&&!bs&&(tepe/o.g-1)*100>=1){ const y=o.g*1.004; if(y>stop){stop=y;bs=true;} }
       } }
     if(!o.kap){ o.st=Math.max(o.st,stop); o.ia=ia||o.ia; o.tp=Math.max(o.tp||o.g,tepe); }
     if(!o.kap&&!o.ia&&A.sure&&o.gz&&Date.now()/1000-o.gz>=A.sure*60) o.kap={s:"SURE",f:o.f,z:saat(Date.now())};

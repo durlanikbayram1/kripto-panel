@@ -55,8 +55,15 @@ KAR_AL_YUZDE = 2.0          # kâr al (en fazla %10)
 ZARAR_DURDUR_YUZDE = 1.0    # zarar durdur (en fazla %5)
 MAKS_POZISYON = 2           # aynı anda en fazla açık pozisyon; para eşit bölünür
 
-# Çıkış modu: "iz" = iz süren stop (kâr büyüdükçe stop yukarı taşınır), "sabit" = kâr al hedefinde sat
-CIKIS_MODU = "oto"          # "oto" = otomatik iz (önerilen), "iz" = sabit mesafeli iz, "sabit" = hedefte sat
+# Çıkış modu:
+#   "takip" = takip eden stop (önerilen): stop hep görülen en yüksek fiyatın MESAFE kadar altında durur,
+#             sadece yukarı çıkar, sabit hedef yoktur (kazanan işlem stop'a çarpınca kapanır).
+#             Başlangıç stopu da aynı mesafededir. Mesafe 0 = coinin oynaklığına göre otomatik.
+#   "oto" = kârın %50–90'ını kilitleyen eski oto iz, "iz" = sabit mesafeli iz, "sabit" = hedefte sat
+CIKIS_MODU = "takip"
+TAKIP_ATR_KAT = 3.0         # oto mesafe = son 14 dakikanın ortalama mum boyu × 3
+TAKIP_MIN_YUZDE = 0.7       # oto mesafe en az %0,7 (sakin coinler, BTC gibi)
+TAKIP_MAX_YUZDE = 2.0       # oto mesafe en fazla %2 (oynak küçük coinler)
 OTO_BASLAT_YUZDE = 1.0      # oto iz bu kâra ulaşınca başlar (ör. +%1 → stop +%0,5)
 TEYIT_BEKLEME_SN = 200      # sinyalden sonra teyit için en fazla bekleme
 MIN_POTANSIYEL_YUZDE = 1.0  # tahmini hareket bundan küçükse alınmaz (komisyonu karşılamaz)
@@ -368,6 +375,16 @@ def hedef_tahmini(mumlar, fiyat, sicrama=0.0):
     tahmin = max(0.3, min(8.0, tahmin))
     return {"tahmin": round(tahmin, 2), "atr": round(atr, 3), "direnc": None if dr is None else round(dr, 2)}
 
+def takip_mesafesi(bilgi=None):
+    """Takip eden stop mesafesi (%). Ayar 0 ise coinin son dakikalardaki oynaklığından (ATR) hesaplanır."""
+    tm = globals().get("AYAR", {}).get("tm", 0)
+    if tm:
+        return tm / 100
+    atr = (bilgi or {}).get("atr")
+    if atr:
+        return round(max(TAKIP_MIN_YUZDE, min(TAKIP_MAX_YUZDE, TAKIP_ATR_KAT * atr)), 2)
+    return 1.0
+
 def oto_kilit(kazanc, tahmin=None):
     """OTO iz: kâr büyüdükçe kilitlenen pay artar. +%1→%50, +%2→%60, +%3→%70, +%4 ve üstü→%80+.
     Tahmini hedefe ulaşınca kârın %90'ı kilitlenir (yükseliş bitmek üzere olabilir)."""
@@ -400,6 +417,9 @@ class Profil:
             return f"Grid · {', '.join(g.get('GRID_COINLER', []))} · {g.get('GRID_SEVIYE', 0)} basamak · limit emir"
         if self.tur == "dip":
             return f"Dipten alım · büyük coinler · hedef ortalamaya dönüş · stop %{globals().get('DIP_STOP', 0):g}".replace(".", ",")
+        if CIKIS_MODU == "takip":
+            tm = globals().get("AYAR", {}).get("tm", 0)
+            return ("Takip stop: tepenin " + (f"%{tm / 100:g}" if tm else "oynaklığa göre %0,7–2") + " altı · sabit hedef yok").replace(".", ",")
         if CIKIS_MODU == "oto":
             return f"Oto iz: +%{OTO_BASLAT_YUZDE:g}'den itibaren kârın %50–90'ı kilitlenir / stop %{ZARAR_DURDUR_YUZDE:g}".replace(".", ",")
         if CIKIS_MODU == "iz":
@@ -427,15 +447,24 @@ class Profil:
         giris_fiyati = fiyat if maker else fiyat * (1 + KAYMA_YUZDE / 100)    # piyasa emri: biraz pahalıya alırız
         komisyon = tutar * (MAKER_KOMISYON_YUZDE if maker else TAKER_KOMISYON_YUZDE) / 100
         miktar = (tutar - komisyon) / giris_fiyati
+        takip = CIKIS_MODU == "takip" and self.tur == "momentum"
+        mesafe = takip_mesafesi(bilgi) if takip else IZ_MESAFE_YUZDE
+        stop_yuzde = mesafe if takip else ZARAR_DURDUR_YUZDE
+        tahmin = (bilgi or {}).get("tahmin")
+        if CIKIS_MODU in ("oto", "takip"):
+            hedef_yuzde = tahmin or 2.0            # takip modunda sadece gösterim içindir, bu fiyatta satılmaz
+        elif CIKIS_MODU == "iz":
+            hedef_yuzde = IZ_BASLAT_YUZDE
+        else:
+            hedef_yuzde = KAR_AL_YUZDE
         poz = {
             "coin": coin, "miktar": miktar, "tutar": tutar, "giris_fiyati": giris_fiyati,
             "giris_komisyon": komisyon, "giris_zamani": simdi(), "giris_mum_t": mum_t,
-            "hedef": giris_fiyati * (1 + ((bilgi or {}).get("tahmin") or 2.0 if CIKIS_MODU == "oto"
-                                          else IZ_BASLAT_YUZDE if CIKIS_MODU == "iz" else KAR_AL_YUZDE) / 100),
-            "oto": CIKIS_MODU == "oto", "tahmin": (bilgi or {}).get("tahmin"),
-            "stop": giris_fiyati * (1 - ZARAR_DURDUR_YUZDE / 100),
-            "stop0": giris_fiyati * (1 - ZARAR_DURDUR_YUZDE / 100),
-            "iz": CIKIS_MODU in ("iz", "oto"), "iz_mesafe": IZ_MESAFE_YUZDE, "tepe": giris_fiyati, "iz_aktif": False,
+            "hedef": giris_fiyati * (1 + hedef_yuzde / 100),
+            "oto": CIKIS_MODU == "oto", "takip": takip, "tahmin": tahmin,
+            "stop": giris_fiyati * (1 - stop_yuzde / 100),
+            "stop0": giris_fiyati * (1 - stop_yuzde / 100),
+            "iz": CIKIS_MODU in ("iz", "oto", "takip"), "iz_mesafe": mesafe, "tepe": giris_fiyati, "iz_aktif": False,
             "islenen_t": mum_t,
             "bilgi": bilgi or {}, "mfe": 0.0, "mae": 0.0, "mfe_dk": 0, "kar1": False,
         }
@@ -540,7 +569,8 @@ def yol_guncelle(p, m):
 def basabas_kontrol(p):
     """Pozisyon +BASABAS_ESIK_YUZDE kâra ulaştıysa stopu girişin biraz üstüne çeker (ayar açıksa)."""
     ay = globals().get("AYAR", {})
-    if not ay.get("bs", 1) or p.get("bs") or p.get("iz_aktif") or p.get("oto") or p.get("mfe", 0) < BASABAS_ESIK_YUZDE:
+    if (not ay.get("bs", 1) or p.get("bs") or p.get("iz_aktif") or p.get("oto") or p.get("takip")
+            or p.get("mfe", 0) < BASABAS_ESIK_YUZDE):
         return
     yeni = p["giris_fiyati"] * (1 + BASABAS_PAY_YUZDE / 100)
     if yeni > p["stop"]:
@@ -555,6 +585,20 @@ def iz_guncelle(p, m):
     if not p.get("iz"):
         return
     p["tepe"] = max(p.get("tepe", p["giris_fiyati"]), m["h"])
+    if p.get("takip"):
+        # Takip eden stop: stop = tepe × (1 − mesafe), sadece yukarı. Fiyat mesafe + %0,4 yükselince
+        # stop alış/satış komisyonunu ve kaymayı da karşılar: işlem artık zararla kapanmaz.
+        yeni = p["tepe"] * (1 - p.get("iz_mesafe", 1.0) / 100)
+        if yeni > p["stop"]:
+            p["stop"] = yeni
+            if not p.get("iz_aktif") and yeni >= p["giris_fiyati"] * (1 + BASABAS_PAY_YUZDE / 100):
+                p["iz_aktif"] = True
+                bildirim = globals().get("bildir")
+                if bildirim:
+                    kilit = (yeni / p["giris_fiyati"] - 1) * 100
+                    bildirim(f"🔒 {p['coin']} +%{(p['tepe'] / p['giris_fiyati'] - 1) * 100:.2f}: stop kâra geçti ({fiyat(yeni)}, girişe göre %{kilit:+.2f}).\n"
+                             f"Artık zararla kapanmaz · fiyat yükseldikçe stop %{p.get('iz_mesafe', 1.0):g} geriden takip ediyor.")
+        return
     if p.get("oto"):
         kazanc = (p["tepe"] / p["giris_fiyati"] - 1) * 100
         kilit = oto_kilit(kazanc, p.get("tahmin"))
@@ -640,11 +684,11 @@ def kayit_detayi(p, sebep, kayit):
         "max_kar_yuzde": round(p.get("mfe", 0), 2), "max_kar_dk": p.get("mfe_dk", 0),
         "max_dusus_yuzde": round(p.get("mae", 0), 2),
         "hassasiyet": f"%{SICRAMA_ESIGI_YUZDE:g}/{HACIM_KATSAYISI:g}x",
-        "hedef_stop": ("oto" if p.get("oto") else f"iz+{(p['hedef'] / p['giris_fiyati'] - 1) * 100:.1f}/{p.get('iz_mesafe', 0):g}" if p.get("iz")
+        "hedef_stop": (f"takip{p.get('iz_mesafe', 0):g}" if p.get("takip") else "oto" if p.get("oto") else f"iz+{(p['hedef'] / p['giris_fiyati'] - 1) * 100:.1f}/{p.get('iz_mesafe', 0):g}" if p.get("iz")
                        else f"%{(p['hedef'] / p['giris_fiyati'] - 1) * 100:.1f}") + f"/%{(1 - p.get('stop0', p['stop']) / p['giris_fiyati']) * 100:.1f}",
         "tepe_yuzde": round((p.get("tepe", p["giris_fiyati"]) / p["giris_fiyati"] - 1) * 100, 2),
         "tahmin_yuzde": b.get("tahmin"), "atr_yuzde": b.get("atr"), "direnc_yuzde": b.get("direnc"),
-        "teyit_sn": b.get("teyit_sn"), "cikis_modu": "oto" if p.get("oto") else ("iz" if p.get("iz") else "sabit"),
+        "teyit_sn": b.get("teyit_sn"), "cikis_modu": "takip" if p.get("takip") else "oto" if p.get("oto") else ("iz" if p.get("iz") else "sabit"),
         "filtreler": "".join(k for k, a in (("B", "bs"), ("F", "fit"), ("G", "gec"), ("L", "lik"))
                              if globals().get("AYAR", {}).get(a, 1)) or "-",
         "neden": neden_etiketi(p, sebep, sure_dk, btc_cikis, piy_cikis),
@@ -678,7 +722,7 @@ def panel_verisi(profiller, calisiyor=True, son_fiyatlar=None):
             acik.append({"c": z["coin"], "g": round(z["giris_fiyati"], 6), "h": round(z["hedef"], 6),
                          "st": round(z["stop"], 6), "f": round(son_fiyatlar.get(z["coin"], z["giris_fiyati"]), 6),
                          "m": round(z["tutar"], 2), "t": z["giris_mum_t"],
-                         "iz": 1 if z.get("iz") else 0, "oto": 1 if z.get("oto") else 0, "th": z.get("tahmin"), "ia": 1 if z.get("iz_aktif") else 0, "im": z.get("iz_mesafe", 0),
+                         "iz": 1 if z.get("iz") else 0, "oto": 1 if z.get("oto") else 0, "tk": 1 if z.get("takip") else 0, "th": z.get("tahmin"), "ia": 1 if z.get("iz_aktif") else 0, "im": z.get("iz_mesafe", 0),
                          "s0": round(z.get("stop0", z["stop"]), 6), "tp": round(z.get("tepe", z["giris_fiyati"]), 6),
                          "bs": 1 if z.get("bs") else 0,
                          "gz": int(z["giris_zamani"].timestamp()), "s": i, "gk": z.get("gk")})
@@ -710,7 +754,7 @@ def panel_verisi(profiller, calisiyor=True, son_fiyatlar=None):
                 "ka": KAR_AL_YUZDE, "zs": ZARAR_DURDUR_YUZDE, "mp": MAKS_POZISYON,
                 "bs": ay.get("bs", 1), "fit": ay.get("fit", 1), "gec": ay.get("gec", 1), "lik": ay.get("lik", 1),
                 "cm": CIKIS_MODU, "ib": IZ_BASLAT_YUZDE, "im": IZ_MESAFE_YUZDE,
-                "tey": ay.get("tey", 1), "pot": ay.get("pot", 1)},
+                "tey": ay.get("tey", 1), "pot": ay.get("pot", 1), "tm": ay.get("tm", 0), "mb": ay.get("mb", 1)},
          "fe": g.get("ELENEN", {})}
     ham = json.dumps(v, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(zlib.compress(ham, 9)).decode().rstrip("=")
@@ -730,8 +774,9 @@ profiller = [Profil(baslangic_tl)]          # tek strateji (liste olarak tutulur
 KLAVYE = "UYGULAMA"   # yaz(..., klavye=KLAVYE) → mesaja güncel verili uygulama düğmesi eklenir
 KLAVYEYI_KALDIR = {"remove_keyboard": True}
 AYAR = {"hs": "dengeli", "zl": GUNLUK_ZARAR_LIMITI, "bil": ISLEM_BILDIRIMI, "oz": OZET_ARALIGI_SAAT, "zd": 0,
-        "bs": 1, "fit": 1, "gec": 1, "lik": 1, "tey": 1, "pot": 1, "rej": 1, "st_m": 1, "st_g": 1, "st_d": 1}
-ELENEN = {"tarih": None, "fit": 0, "gec": 0, "lik": 0, "tey": 0, "pot": 0, "rej": 0}    # bugün filtrelere takılan sinyal sayısı
+        "bs": 1, "fit": 1, "gec": 1, "lik": 1, "tey": 1, "pot": 1, "rej": 1, "st_m": 1, "st_g": 1, "st_d": 1,
+        "cm": "takip", "tm": 0, "mb": 1, "sv": 2}
+ELENEN = {"tarih": None, "fit": 0, "gec": 0, "lik": 0, "tey": 0, "pot": 0, "rej": 0, "mb": 0}    # bugün filtrelere takılan sinyal sayısı
 son_radar = []
 son_tarama_ts = 0
 son_huni = [0, 0, 0, 0, 0]     # son tarama: taranan, yükselen, aday, sinyal, bugünkü alım
@@ -837,7 +882,10 @@ def durumu_yukle():
     try:
         veri = json.load(open(DURUM_DOSYASI, encoding="utf-8"))
         otomatik = veri.get("otomatik", True)
-        AYAR.update(veri.get("ayar", {}))
+        kayitli = veri.get("ayar", {})
+        AYAR.update(kayitli)
+        if kayitli.get("sv", 0) < 2:            # eski sürümden geçiş: yeni önerilen ayarlar devreye girer
+            AYAR.update(cm="takip", tm=0, mb=1, sv=2)
         GUN.update(veri.get("gun", {}))
         MAKS_BEKLEME_DK = veri.get("sure", MAKS_BEKLEME_DK)
         hassasiyet_uygula(AYAR.get("hs", "dengeli"))
@@ -885,15 +933,21 @@ NEDEN_ADI = {"ANINDA_DONUS": "anında geri döndü", "KARI_GERI_VERDI": "+%1 kâ
 def neden_okunur(n):
     return ", ".join(NEDEN_ADI.get(x, x) for x in n.split("+"))
 
+def momentum_rejim_engeli():
+    """Momentum sadece yükseliş (BOGA) rejiminde alım yapar: yatay piyasada sıçramalar genelde geri döner."""
+    return bool(AYAR.get("mb", 1)) and globals().get("REJIM", {}).get("d") != "BOGA"
+
 def filtre_engeli(s):
     """Sinyal alım filtrelerine takılıyor mu? Takılıyorsa nedeni döner (ve günlük sayaç artar)."""
     bugun = simdi().date().isoformat()
     if ELENEN.get("tarih") != bugun:
-        ELENEN.update(tarih=bugun, fit=0, gec=0, lik=0, tey=0, pot=0, rej=0)
+        ELENEN.update(tarih=bugun, fit=0, gec=0, lik=0, tey=0, pot=0, rej=0, mb=0)
     if not AYAR.get("st_m", 1):
         return "kapali"
     if globals().get("rejim_engel", lambda: False)():
         neden = "rej"
+    elif momentum_rejim_engeli():
+        neden = "mb"
     elif AYAR.get("gec", 1) and s.get("degisim", 0) > SICRAMA_MAX_YUZDE:
         neden = "gec"
     elif AYAR.get("fit", 1) and s.get("ust_fitil", 0) >= UST_FITIL_MAX:
@@ -958,6 +1012,9 @@ def _alim_yap(coin, mumlar, s):
     """Hedef tahmini yapar, potansiyel yetersizse almaz; değilse alır ve bildirir."""
     if not AYAR.get("st_m", 1) or globals().get("rejim_engel", lambda: False)():
         return None
+    if momentum_rejim_engeli():                      # teyit beklerken piyasa yükselişten çıktıysa alma
+        ELENEN["mb"] = ELENEN.get("mb", 0) + 1
+        return None
     try:
         uzun = mumlari_al(coin + "TRY", 120)         # direnç için daha uzun geçmiş
     except Exception:
@@ -977,7 +1034,9 @@ def _alim_yap(coin, mumlar, s):
                 bildir(f"🟢 ALIŞ (demo, otomatik) | {p.ad}\n{coin}: {fiyat(poz['giris_fiyati'])} TL · Tutar: {tl(poz['tutar'])}\n"
                     f"Sıçrama: {s['degisim']:+.2f}% | Hacim: {s['hacim_kat']:.1f}x"
                     + (f" | Teyit: {s['teyit_sn']} sn" if s.get("teyit_sn") else "") + "\n"
-                    + (tah + f" | Stop: {fiyat(poz['stop'])}" if poz.get("oto") else
+                    + (f"Takip stop: tepenin %{poz['iz_mesafe']:g} altı · Stop: {fiyat(poz['stop'])}" + (f"\n{tah} (satış hedefi değil)" if tah else "")
+                       if poz.get("takip") else
+                       tah + f" | Stop: {fiyat(poz['stop'])}" if poz.get("oto") else
                        f"İz başlar: {fiyat(poz['hedef'])} | Stop: {fiyat(poz['stop'])}" if poz.get("iz")
                        else f"Hedef: {fiyat(poz['hedef'])} | Stop: {fiyat(poz['stop'])}"))
             return poz
@@ -1106,7 +1165,8 @@ def elle_al(coin, i=0):
     if poz:
         alim_say()
         yaz(f"🟢 ALIŞ (demo, elle) | {p.ad}\n{coin}: {fiyat(poz['giris_fiyati'])} TL · Tutar: {tl(poz['tutar'])}\n"
-            + (f"Tahmini hedef: {fiyat(poz['hedef'])}" if poz.get("oto") else f"İz başlar: {fiyat(poz['hedef'])}" if poz.get("iz") else f"Hedef: {fiyat(poz['hedef'])}")
+            + (f"Takip stop: tepenin %{poz['iz_mesafe']:g} altı" if poz.get("takip") else
+               f"Tahmini hedef: {fiyat(poz['hedef'])}" if poz.get("oto") else f"İz başlar: {fiyat(poz['hedef'])}" if poz.get("iz") else f"Hedef: {fiyat(poz['hedef'])}")
             + f" | Stop: {fiyat(poz['stop'])}", klavye=KLAVYE)
     else:
         yaz("⚠️ Alım için boşta para kalmadı.", klavye=KLAVYE)
@@ -1184,8 +1244,8 @@ def kz_uygula():
     """Kayıtlı kâr/zarar ve pozisyon sayısı ayarlarını devreye alır."""
     global KAR_AL_YUZDE, ZARAR_DURDUR_YUZDE, MAKS_POZISYON, CIKIS_MODU, IZ_BASLAT_YUZDE, IZ_MESAFE_YUZDE
     CIKIS_MODU = AYAR.get("cm", CIKIS_MODU)
-    if CIKIS_MODU not in ("oto", "iz", "sabit"):
-        CIKIS_MODU = "oto"
+    if CIKIS_MODU not in ("takip", "oto", "iz", "sabit"):
+        CIKIS_MODU = "takip"
     IZ_BASLAT_YUZDE = AYAR.get("ib", IZ_BASLAT_YUZDE)
     IZ_MESAFE_YUZDE = AYAR.get("im", IZ_MESAFE_YUZDE)
     KAR_AL_YUZDE = AYAR.get("ka", KAR_AL_YUZDE)
@@ -1223,6 +1283,16 @@ def ayar_uygula(ad, deger):
         AYAR["mp"] = int(deger)
         kz_uygula()
         yaz(f"📦 Aynı anda en fazla {deger} pozisyon · boştaki para eşit bölünür.", klavye=KLAVYE)
+    elif ad == "tm" and deger in ("0", "75", "100", "150", "200"):
+        AYAR["tm"] = int(deger)
+        yaz(("📏 Takip mesafesi: otomatik (coinin oynaklığına göre %0,7–2)" if deger == "0"
+             else f"📏 Takip mesafesi: %{int(deger) / 100:g} · stop tepenin bu kadar altında durur").replace(".", ",")
+            + "\nYeni açılan pozisyonlara uygulanır.", klavye=KLAVYE)
+    elif ad == "cm" and deger == "takip":
+        AYAR["cm"] = deger
+        kz_uygula()
+        yaz("📏 Çıkış: takip eden stop · stop hep tepenin altında durur, sadece yukarı çıkar, sabit hedef yok"
+            "\nYeni açılan pozisyonlara uygulanır.", klavye=KLAVYE)
     elif ad == "cm" and deger in ("oto", "iz", "sabit"):
         AYAR["cm"] = deger
         kz_uygula()
@@ -1248,9 +1318,10 @@ def ayar_uygula(ad, deger):
         AYAR[anahtar] = int(deger[1])
         ad_ = {"m": "🚀 Momentum", "g": "🧱 Grid", "d": "🎣 Dipten alım"}[deger[0]]
         yaz(f"{ad_}: " + ("açık" if AYAR[anahtar] else "durduruldu (yeni alım yok; açık pozisyonlar yönetilmeye devam eder)"), klavye=KLAVYE)
-    elif ad in ("bs", "fit", "gec", "lik", "tey", "pot", "rej") and deger in ("0", "1"):
+    elif ad in ("bs", "fit", "gec", "lik", "tey", "pot", "rej", "mb") and deger in ("0", "1"):
         AYAR[ad] = int(deger)
-        adlar = {"rej": "🐻 Piyasa rejimi filtresi (düşüşte yeni alım yok)","tey": "⏳ Giriş teyidi (sonraki mum sıçramayı korursa al)",
+        adlar = {"rej": "🐻 Piyasa rejimi filtresi (düşüşte yeni alım yok)",
+                 "mb": "🐂 Momentum sadece yükselişte (yatay/düşüşte momentum alımı yok)","tey": "⏳ Giriş teyidi (sonraki mum sıçramayı korursa al)",
                  "pot": f"🎯 Potansiyel filtresi (tahmini hareket < %{MIN_POTANSIYEL_YUZDE:g} ise alma)","bs": f"🔒 Başabaş stop (+%{BASABAS_ESIK_YUZDE:g}'de stop girişe)",
                  "fit": f"🕯 Üst fitil filtresi (≥%{UST_FITIL_MAX})",
                  "gec": f"🏃 Geç giriş filtresi (5dk > %{SICRAMA_MAX_YUZDE:g})",
@@ -1379,8 +1450,8 @@ GRID_DUSUSTE_KAPAT = False   # piyasa düşüşe geçince elde kalan grid basama
 DIP_COINLER = ["BTC", "ETH", "SOL", "BNB", "XRP", "AVAX", "DOGE", "ADA", "LINK", "TRX"]
 DIP_Z = 2.2                  # fiyat 60 dk ortalamasının 2,2 standart sapma altına inerse aşırı düşüş sayılır
 DIP_MAKS_POZ = 2
-DIP_STOP = 1.5
-DIP_HEDEF_MIN = 0.7
+DIP_STOP = 1.0               # eskiden %1,5 stop / %0,7 hedef idi: kazanç kayıptan küçüktü
+DIP_HEDEF_MIN = 1.0          # ortalamaya uzaklık en az stop kadar değilse alınmaz (en az 1:1)
 DIP_HEDEF_MAX = 2.0
 DIP_LIMIT_IND = 0.1          # limit alış: anlık fiyatın %0,1 altına
 DIP_EMIR_DK = 3              # dolmayan limit emir 3 dk sonra iptal
@@ -1540,9 +1611,10 @@ def dip_tara():
         z = (kapanis[-1] - ort60) / std60
         trend_ok = _ort(kapanis[-240:]) >= _ort(kapanis[-300:-60])          # 4 saatlik ortalama yükseliyor
         cokus = (kapanis[-1] / kapanis[-6] - 1) * 100 <= -3.0                # 5 dk'da %3+ çöküşe girme
-        if z <= -DIP_Z and trend_ok and not cokus:
-            c = kapanis[-1]
-            hedef = max(DIP_HEDEF_MIN, min(DIP_HEDEF_MAX, (ort60 / c - 1) * 100))
+        c = kapanis[-1]
+        uzaklik = (ort60 / c - 1) * 100                      # ortalamaya dönüşte beklenen yükseliş
+        if z <= -DIP_Z and trend_ok and not cokus and uzaklik >= DIP_HEDEF_MIN:
+            hedef = min(DIP_HEDEF_MAX, uzaklik)
             emirler[coin] = {"fiyat": c * (1 - DIP_LIMIT_IND / 100), "t": kap[-1]["t"],
                              "bitis": kap[-1]["t"] + DIP_EMIR_DK * 60000, "hedef": round(hedef, 2), "z": round(z, 2)}
             print(f"🎣 Dip {coin}: z={z:.2f}, limit alış {fiyat(emirler[coin]['fiyat'])} (hedef +%{hedef:.2f})")
@@ -1594,15 +1666,92 @@ def lab_isle(tam=False):
     except Exception as e:
         print(f"(Strateji laboratuvarı hatası: {type(e).__name__}: {e})")
 
+# ---------------- Telegram yedeği ----------------
+# Sunucu silinip yeniden kurulsa da geçmiş kaybolmasın: durum ve işlem dökümü 10 dk'da bir
+# sohbetteki SABİTLENMİŞ tek bir mesaja dosya olarak yazılır (aynı mesaj güncellenir, sohbet dolmaz).
+# Yeni sunucuda dosya yoksa bot bu sabitlenmiş yedeği okuyup kaldığı yerden devam eder.
+YEDEK_ADI = "kripto_yedek.json"
+YEDEK_ARALIGI_SN = 600
+YEDEK = {"mid": None, "son": 0}
+
+def yedek_al(zorla=False):
+    if not (TG_TOKEN and TG_CHAT) or not os.path.exists(DURUM_DOSYASI):
+        return
+    if not zorla and time.time() - YEDEK["son"] < YEDEK_ARALIGI_SN:
+        return
+    YEDEK["son"] = time.time()
+    try:
+        with open(DURUM_DOSYASI, encoding="utf-8") as f:
+            durum = json.load(f)
+        csv_metni = ""
+        if os.path.exists(ISLEM_DOSYASI):
+            with open(ISLEM_DOSYASI, encoding="utf-8") as f:
+                csv_metni = f.read()
+        icerik = json.dumps({"durum": durum, "csv": csv_metni, "zaman": simdi().isoformat()},
+                            ensure_ascii=False).encode("utf-8")
+        aciklama = f"💾 Otomatik yedek · {simdi():%d.%m %H:%M} · silme, sabit kalsın (sunucu yenilenirse buradan devam edilir)"
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/"
+        if YEDEK["mid"]:
+            r = OTURUM.post(url + "editMessageMedia", timeout=30,
+                            data={"chat_id": TG_CHAT, "message_id": YEDEK["mid"],
+                                  "media": json.dumps({"type": "document", "media": "attach://dosya", "caption": aciklama})},
+                            files={"dosya": (YEDEK_ADI, icerik)}).json()
+            if r.get("ok") or "not modified" in str(r.get("description", "")):
+                return
+        r = OTURUM.post(url + "sendDocument", timeout=30,
+                        data={"chat_id": TG_CHAT, "caption": aciklama, "disable_notification": "true"},
+                        files={"document": (YEDEK_ADI, icerik)}).json()
+        if r.get("ok"):
+            YEDEK["mid"] = r["result"]["message_id"]
+            tg("pinChatMessage", chat_id=TG_CHAT, message_id=YEDEK["mid"], disable_notification=True)
+    except Exception as e:
+        print(f"(Yedek alınamadı: {type(e).__name__}: {e})")
+
+def yedekten_geri_yukle():
+    """Sabitlenmiş yedek mesajını bulur; sunucuda durum dosyası yoksa yedekten geri yükler."""
+    if not (TG_TOKEN and TG_CHAT):
+        return False
+    try:
+        pin = tg("getChat", chat_id=TG_CHAT).get("result", {}).get("pinned_message") or {}
+        belge = pin.get("document") or {}
+        if belge.get("file_name") != YEDEK_ADI:
+            return False
+        YEDEK["mid"] = pin.get("message_id")
+        if os.path.exists(DURUM_DOSYASI):
+            return False                       # sunucudaki durum daha güncel
+        yol = tg("getFile", file_id=belge["file_id"]).get("result", {}).get("file_path")
+        if not yol:
+            return False
+        paket = OTURUM.get(f"https://api.telegram.org/file/bot{TG_TOKEN}/{yol}", timeout=30).json()
+        with open(DURUM_DOSYASI, "w", encoding="utf-8") as f:
+            json.dump(paket["durum"], f, ensure_ascii=False)
+        if paket.get("csv"):
+            with open(ISLEM_DOSYASI, "w", encoding="utf-8") as f:
+                f.write(paket["csv"])
+        print(f"💾 Yedekten geri yüklendi ({paket.get('zaman', '?')})")
+        return True
+    except Exception as e:
+        print(f"(Yedek okunamadı: {type(e).__name__}: {e})")
+        return False
+
+_eski_sifirla = hesabi_sifirla
+def hesabi_sifirla():
+    _eski_sifirla()
+    durumu_kaydet()
+    yedek_al(zorla=True)
+
+yedekten = yedekten_geri_yukle()
 yuklendi = durumu_yukle()
 # ---------------- Ana döngü ----------------
 if yuklendi:
-    yaz("♻️ Bot sunucuda yeniden başladı, kaldığı yerden devam ediyor.\n" + tum_ozet("Mevcut durum"), klavye=KLAVYEYI_KALDIR)
+    yaz(("💾 Sunucu yenilenmiş: geçmiş Telegram yedeğinden geri yüklendi.\n" if yedekten else "")
+        + "♻️ Bot sunucuda yeniden başladı, kaldığı yerden devam ediyor.\n" + tum_ozet("Mevcut durum"), klavye=KLAVYEYI_KALDIR)
 else:
     yaz(f"▶️ Momentum sunucuda başladı (7/24) | Bakiye: {BASLANGIC_USD} $ ({tl(baslangic_tl)})\n"
         f"Coinler: {len(COINLER)} coin (tüm TL çiftleri) | Kaynak: {aktif_kaynak}\n"
         f"Telefonun kapalıyken de çalışır. 📱 Uygulamayı sol alttaki Panel düğmesinden aç.", klavye=KLAVYEYI_KALDIR)
 durumu_kaydet()
+yedek_al(zorla=True)
 menu_guncelle(zorla=True)
 
 bitis = time.time() + CALISMA_SAATI * 3600 if CALISMA_SAATI else float("inf")
@@ -1637,6 +1786,7 @@ try:
         kalan = max(1, min(KONTROL_ARALIGI_SN - (time.time() - son_tarama), POZ_KONTROL_SN - (time.time() - son_poz_kontrol)))
         telegrami_dinle(min(25, kalan))
         durumu_kaydet()
+        yedek_al()
       except KeyboardInterrupt:
         raise
       except Exception as e:
@@ -1646,5 +1796,6 @@ except KeyboardInterrupt:
     print("⏹️ Durduruldu.")
 
 durumu_kaydet()
+yedek_al(zorla=True)
 yaz(tum_ozet("⏹ Bot durdu (sunucu). Yeniden başlayınca kaldığı yerden devam eder."))
 print(f"\nİşlem kayıtları: {ISLEM_DOSYASI}")
