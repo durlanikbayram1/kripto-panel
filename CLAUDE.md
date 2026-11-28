@@ -21,9 +21,14 @@ Bu depo kullanıcının DEMO kripto botudur (sanal para). `kripto_bot.py` Oracle
 Bot 15 dk'da bir gizli `durlanikbayram1/kripto-log` deposuna `durum.json` (sürüm, özet, son hatalar,
 son kayıtlar, tam durum) ve `islemler.csv` yazar. `durum.json` 45 dakikadan eskiyse bot durmuş olabilir.
 
-## Sınırlar
+## Sınırlar ve strateji güncellemeleri
 - Sadece demo. Gerçek para / borsa API anahtarı ekleme.
-- Strateji kurallarını kullanıcının kararları belirler (stop maliyete göre, +%1'den sonra kârın en az %70'i
-  korunur, tüm TL coinleri taranır, pozisyonlarda süre sınırı yok). Hata düzeltmesi serbest; kuralı değiştiren
-  bir öneri ise kullanıcıya önce sorulur.
+- Kullanıcı, zararlı işlemlerin nedenlerini bulup botu kâr edecek şekilde güncellemeye izin verdi; ama
+  SADECE yeterli veriyle: ilgili stratejide son değişiklikten bu yana en az 10 zararlı ve 20 kapanmış işlem,
+  ve zarar nedeni bunların belirgin kısmında (~%40+) tekrar etmeli. Tek işleme göre değişiklik yapılmaz.
+- Strateji başına bir seferde tek değişiklik; geçmiş CSV'de geriye dönük sına; 20 işlem sonra önce/sonra
+  karşılaştır, kötüleştiyse geri al. Her değişiklik kripto-log/claude_notlar.md "Değişiklik günlüğü"ne yazılır.
+- Kullanıcının temel kuralları değişmez (gerekirse sadece öneri): stop maliyete göre (komisyon dahil),
+  coin yükseldikçe stop da yükselir, +%1'den sonra net kârın en az %70'i korunur, tüm TL coinleri taranır
+  (alım filtresi eklemek serbest), pozisyonlarda süre sınırı yok, üç strateji ayrı sanal 100 $ ile yarışır.
 - Token, chat id gibi gizli bilgiler dosyaya yazılmaz (sunucuda ortam değişkeni / .github_token).
