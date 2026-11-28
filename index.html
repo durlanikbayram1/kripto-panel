@@ -559,7 +559,7 @@ function ciz(){
   const fs=(k,b,a,say)=>`<div class="sr"><div>${b}${say!=null?` <span class="tg d" style="display:inline-block;margin:0">${say} elendi</span>`:""}<span>${a}</span></div><button class="sw ${A[k]??1?"on":""}" data-f="${k}"></button></div>`;
   $("aF").innerHTML=fs("mb","MOMENTUM SADECE YÜKSELİŞTE","Piyasa yatay veya düşüşteyken momentum yeni alım yapmaz · yatayda sıçramalar genelde geri döner",fe.mb||0)+fs("tey","GİRİŞ TEYİDİ","Sinyalden sonraki mum sıçramayı korursa alınır · tepeden alımı azaltır",fe.tey||0)+
     fs("pot","POTANSİYEL FİLTRESİ","Tahmini hareket %1'den azsa alınmaz · komisyonu karşılamaz",fe.pot||0)+
-    fs("bs","BAŞABAŞ STOP",A.cm==="takip"?"Takip modunda gerekmez (stop fiyatla birlikte yükselir)":OTO?"Oto iz modunda gerekmez (oto iz +%1'de zaten +%0,5 kilitler)":"+%1 kâra geçince stop girişin üstüne çekilir · zararla kapanmaz")+
+    fs("bs","BAŞABAŞ STOP",A.cm==="takip"?"Coin komisyon dahil maliyeti kurtarınca stop maliyete çekilir · zararla kapanmaz":OTO?"Oto iz modunda gerekmez (oto iz +%1'de zaten +%0,5 kilitler)":"+%1 kâra geçince stop girişin üstüne çekilir · zararla kapanmaz")+
     fs("gec","GEÇ GİRİŞ FİLTRESİ","5 dk'da %2'den fazla yükselmiş coin alınmaz",fe.gec||0)+
     fs("fit","ÜST FİTİL FİLTRESİ","Giriş mumunda uzun üst fitil (≥%30) varsa alınmaz",fe.fit||0)+
     fs("lik","LİKİDİTE FİLTRESİ","Dakikada 20.000 TL'den az işlem gören coin alınmaz",fe.lik||0);

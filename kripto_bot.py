@@ -407,6 +407,7 @@ def takip_ekle(z, mesafe=None):
 
 KAR_KILIT_BASLA = 1.0       # coin bu kadar yükselince kâr kilidi devreye girer
 KAR_KORU_ORAN = 0.70        # kilit devredeyken net kârın en az %70'i korunur
+BASABAS_KILIT_NET_YUZDE = 0.0   # fiyat maliyeti (komisyon dahil) bu kadar aşınca stop maliyete çekilir: artık zararla kapanmaz
 
 def takip_stop_fiyati(tepe, giris, zararsiz, mesafe):
     """Takip eden stop — her şey MALİYETE göre (alış + satış komisyonu + kayma dahil):
@@ -415,9 +416,12 @@ def takip_stop_fiyati(tepe, giris, zararsiz, mesafe):
     - Yükseliş %1'i geçince net kârın en az %70'i korunur (yükseliş büyüdükçe tepenin %1 gerisi daha fazla korur)."""
     yukselis = (tepe / giris - 1) * 100
     net = yukselis - mesafe                                  # stop'ta satılırsa net sonuç (%)
+    net_kar = (tepe / zararsiz - 1) * 100                    # tepede satılsaydı net kâr
     if yukselis >= KAR_KILIT_BASLA - 1e-9:          # %1 dahil
-        net_kar = (tepe / zararsiz - 1) * 100                # tepede satılsaydı net kâr
         net = max(net, KAR_KORU_ORAN * net_kar)
+    # Maliyet kilidi: coin bir kez komisyon dahil maliyeti kurtardıysa stop en az maliyete çekilir
+    if net_kar >= BASABAS_KILIT_NET_YUZDE - 1e-9 and globals().get("AYAR", {}).get("bs", 1):
+        net = max(net, 0.0)
     return zararsiz * (1 + net / 100)
 
 def takip_mesafesi(bilgi=None):
@@ -561,9 +565,13 @@ class Profil:
         if not mumlar:
             return None
         def stop_sebebi():
+            if p.get("iz_aktif") and p.get("zararsiz") and p["stop"] <= p["zararsiz"] * 1.0005:
+                return "BASABAS"                    # maliyet kilidi: komisyon dahil başabaş çıkış
             if p.get("iz_aktif"):
                 return "IZ STOP"
             return "BASABAS" if p.get("bs") else "ZARAR DURDUR"
+        if p.get("bb_bekle"):
+            return self.basabas_bekle(p, mumlar)
         son_index = len(mumlar) - 1
         for i, m in enumerate(mumlar):
             if m["t"] <= max(p["giris_mum_t"], p.get("islenen_t", 0)):
@@ -582,6 +590,16 @@ class Profil:
                 p["islenen_t"] = m["t"]
         anlik = mumlar[-1]["c"]
         if anlik <= p["stop"]:
+            if p.get("zararsiz") and p["stop"] >= p["zararsiz"] * (1 - 1e-9) and anlik < p["zararsiz"]:
+                # Maliyet kilitliyken fiyat 5 sn içinde stop'un altına sıçradı: piyasadan satmak zarar yazar.
+                # Bunun yerine maliyet fiyatına limit satış bırakılır (fiyat geri gelince zararsız kapanır).
+                p["bb_bekle"], p["bb_t"] = True, mumlar[-1]["t"]
+                bildirim = globals().get("bildir")
+                if bildirim:
+                    bildirim(f"⏳ {p['coin']} maliyetin altına hızlı düştü ({fiyat(anlik)}). Zararla satılmadı: "
+                             f"maliyet fiyatına ({fiyat(p['zararsiz'])}) limit satış bekliyor. "
+                             f"Ani çöküşe karşı son çare stop: {fiyat(p.get('stop0', p['zararsiz'] * 0.99))}.")
+                return None
             return self.cik(p, anlik, stop_sebebi(), maker=False)
         if not p.get("iz") and anlik >= p["hedef"]:
             return self.cik(p, p["hedef"], "KAR AL", maker=True)
@@ -594,6 +612,24 @@ class Profil:
         # süre sınırı (0 = yok); iz süren stop devredeyse kâr koşsun diye uygulanmaz
         if MAKS_BEKLEME_DK and not p.get("iz_aktif") and (simdi() - p["giris_zamani"]).total_seconds() >= MAKS_BEKLEME_DK * 60:
             return self.cik(p, anlik, "SURE DOLDU", maker=False)
+        return None
+
+    def basabas_bekle(self, p, mumlar):
+        """Maliyet kilidi sonrası fiyat stop'un altına sıçradıysa: maliyet fiyatında limit satış (maker) bekler.
+        Fiyat ilk stop seviyesine (stop0) kadar çökerse son çare olarak piyasadan satar."""
+        hedef, son_care = p["zararsiz"], p.get("stop0", p["zararsiz"] * 0.99)
+        for m in mumlar:
+            if m["t"] <= p.get("bb_t", 0):
+                continue
+            if m["h"] >= hedef:
+                return self.cik(p, hedef, "BASABAS", maker=True)
+            if m["l"] <= son_care:
+                return self.cik(p, son_care, "ZARAR DURDUR", maker=False)
+        anlik = mumlar[-1]["c"]
+        if anlik >= hedef:
+            return self.cik(p, hedef, "BASABAS", maker=True)
+        if anlik <= son_care:
+            return self.cik(p, anlik, "ZARAR DURDUR", maker=False)
         return None
 
     def ozet(self):
@@ -1387,7 +1423,7 @@ def ayar_uygula(ad, deger):
         AYAR[ad] = int(deger)
         adlar = {"rej": "🐻 Piyasa rejimi filtresi (düşüşte yeni alım yok)",
                  "mb": "🐂 Momentum sadece yükselişte (yatay/düşüşte momentum alımı yok)","tey": "⏳ Giriş teyidi (sonraki mum sıçramayı korursa al)",
-                 "pot": f"🎯 Potansiyel filtresi (tahmini hareket < %{MIN_POTANSIYEL_YUZDE:g} ise alma)","bs": f"🔒 Başabaş stop (+%{BASABAS_ESIK_YUZDE:g}'de stop girişe)",
+                 "pot": f"🎯 Potansiyel filtresi (tahmini hareket < %{MIN_POTANSIYEL_YUZDE:g} ise alma)","bs": "🔒 Maliyet kilidi (coin komisyon dahil maliyeti kurtarınca stop maliyete çekilir · zararla kapanmaz)",
                  "fit": f"🕯 Üst fitil filtresi (≥%{UST_FITIL_MAX})",
                  "gec": f"🏃 Geç giriş filtresi (5dk > %{SICRAMA_MAX_YUZDE:g})",
                  "lik": f"💧 Likidite filtresi (dakikada < {MIN_DK_HACIM_TL:,.0f} TL)".replace(",", ".")}
