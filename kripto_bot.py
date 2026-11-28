@@ -78,7 +78,10 @@ TAKIP_ATR_KAT = 3.0         # oto mesafe = son 14 dakikanın ortalama mum boyu �
 TAKIP_MIN_YUZDE = 0.7       # oto mesafe en az %0,7 (sakin coinler, BTC gibi)
 TAKIP_MAX_YUZDE = 2.0       # oto mesafe en fazla %2 (oynak küçük coinler)
 OTO_BASLAT_YUZDE = 1.0      # oto iz bu kâra ulaşınca başlar (ör. +%1 → stop +%0,5)
-TEYIT_BEKLEME_SN = 200      # sinyalden sonra teyit için en fazla bekleme
+TEYIT_BEKLEME_SN = 200      # sinyalden sonra teyit için en fazla bekleme (klasik teyit: sonraki mum kapanışı)
+HIZLI_TEYIT_KONTROL = 3     # hızlı teyit: canlı fiyat art arda bu kadar kontrolde (5 sn arayla) sıçramayı korursa al
+HIZLI_TEYIT_MAX_SN = 60     # hızlı teyit bu sürede gelmezse sinyal iptal
+KOVALAMA_MAX_YUZDE = 0.5    # teyit sırasında fiyat sinyal fiyatının bu kadar üstüne kaçtıysa alma (tepeden girme)
 MIN_POTANSIYEL_YUZDE = 1.0  # tahmini hareket bundan küçükse alınmaz (komisyonu karşılamaz)
 IZ_BASLAT_YUZDE = 1.5       # pozisyon bu kadar kâra geçince iz süren stop devreye girer
 IZ_MESAFE_YUZDE = 0.75      # stop, görülen en yüksek fiyatın bu kadar altında takip eder
@@ -847,7 +850,8 @@ def panel_verisi(profiller, calisiyor=True, son_fiyatlar=None):
                 "ka": KAR_AL_YUZDE, "zs": ZARAR_DURDUR_YUZDE, "mp": MAKS_POZISYON,
                 "bs": ay.get("bs", 1), "fit": ay.get("fit", 1), "gec": ay.get("gec", 1), "lik": ay.get("lik", 1),
                 "cm": CIKIS_MODU, "ib": IZ_BASLAT_YUZDE, "im": IZ_MESAFE_YUZDE,
-                "tey": ay.get("tey", 1), "pot": ay.get("pot", 1), "tm": ay.get("tm", 0), "mb": ay.get("mb", 1)},
+                "tey": ay.get("tey", 1), "pot": ay.get("pot", 1), "tm": ay.get("tm", 0), "mb": ay.get("mb", 1),
+                "hzt": ay.get("hzt", 1), "kov": ay.get("kov", 1)},
          "fe": g.get("ELENEN", {})}
     ham = json.dumps(v, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(zlib.compress(ham, 9)).decode().rstrip("=")
@@ -868,8 +872,8 @@ KLAVYE = "UYGULAMA"   # yaz(..., klavye=KLAVYE) → mesaja güncel verili uygula
 KLAVYEYI_KALDIR = {"remove_keyboard": True}
 AYAR = {"hs": "dengeli", "zl": GUNLUK_ZARAR_LIMITI, "bil": ISLEM_BILDIRIMI, "oz": OZET_ARALIGI_SAAT, "zd": 0,
         "bs": 1, "fit": 1, "gec": 1, "lik": 1, "tey": 1, "pot": 1, "rej": 1, "st_m": 1, "st_g": 1, "st_d": 1,
-        "cm": "takip", "tm": 100, "mb": 1, "sv": 3}
-ELENEN = {"tarih": None, "fit": 0, "gec": 0, "lik": 0, "tey": 0, "pot": 0, "rej": 0, "mb": 0}    # bugün filtrelere takılan sinyal sayısı
+        "cm": "takip", "tm": 100, "mb": 1, "sv": 3, "hzt": 1, "kov": 1}
+ELENEN = {"tarih": None, "fit": 0, "gec": 0, "lik": 0, "tey": 0, "pot": 0, "rej": 0, "mb": 0, "kov": 0}    # bugün filtrelere takılan sinyal sayısı
 son_radar = []
 son_tarama_ts = 0
 son_huni = [0, 0, 0, 0, 0]     # son tarama: taranan, yükselen, aday, sinyal, bugünkü alım
@@ -1042,7 +1046,7 @@ def filtre_engeli(s):
     """Sinyal alım filtrelerine takılıyor mu? Takılıyorsa nedeni döner (ve günlük sayaç artar)."""
     bugun = simdi().date().isoformat()
     if ELENEN.get("tarih") != bugun:
-        ELENEN.update(tarih=bugun, fit=0, gec=0, lik=0, tey=0, pot=0, rej=0, mb=0)
+        ELENEN.update(tarih=bugun, fit=0, gec=0, lik=0, tey=0, pot=0, rej=0, mb=0, kov=0)
     if not AYAR.get("st_m", 1):
         return "kapali"
     if globals().get("rejim_engel", lambda: False)():
@@ -1079,10 +1083,35 @@ def _coin_isle(coin, mumlar, yeni_giris):
     bos_yer = any(p.serbest() and coin not in p.acik_coinler() and time.time() >= p.bekleme.get(coin, 0) for p in profiller)
     # 1) Teyit bekleyen sinyal: sinyal mumundan sonra yeni bir mum kapandı mı, sıçramayı korudu mu?
     b = BEKLEYEN.get(coin)
+    if b and AYAR.get("hzt", 1):
+        # Hızlı teyit: mum kapanışını beklemeden canlı fiyatla (5 sn'de bir) kontrol
+        anlik = mumlar[-1]["c"]
+        sure = time.time() - b["zaman"]
+        if anlik < b["orta"]:                                   # sıçrama bozuldu
+            del BEKLEYEN[coin]
+            if bos_yer:
+                ELENEN["tey"] = ELENEN.get("tey", 0) + 1
+            return s
+        kacti = AYAR.get("kov", 1) and anlik > b.get("sf", anlik) * (1 + KOVALAMA_MAX_YUZDE / 100)
+        b["ok"] = 0 if kacti else b.get("ok", 0) + 1
+        if b["ok"] >= HIZLI_TEYIT_KONTROL and bos_yer:
+            del BEKLEYEN[coin]
+            sg = dict(b["s"], fiyat=anlik, teyit_sn=round(sure))
+            return _alim_yap(coin, mumlar, sg) or s
+        if sure > HIZLI_TEYIT_MAX_SN:
+            del BEKLEYEN[coin]
+            if bos_yer:
+                k = "kov" if kacti else "tey"
+                ELENEN[k] = ELENEN.get(k, 0) + 1
+        return s
     if b:
         kap_son = mumlar[-2]
         if kap_son["t"] > b["t"]:
             del BEKLEYEN[coin]
+            if (AYAR.get("kov", 1) and mumlar[-1]["c"] > b.get("sf", mumlar[-1]["c"]) * (1 + KOVALAMA_MAX_YUZDE / 100)):
+                if bos_yer:
+                    ELENEN["kov"] = ELENEN.get("kov", 0) + 1
+                return s
             if kap_son["c"] >= b["orta"] and mumlar[-1]["c"] >= b["orta"] and bos_yer:
                 sg = dict(b["s"], fiyat=mumlar[-1]["c"], teyit_sn=round(time.time() - b["zaman"]))
                 return _alim_yap(coin, mumlar, sg) or s
@@ -1101,7 +1130,8 @@ def _coin_isle(coin, mumlar, yeni_giris):
             return s
         if AYAR.get("tey", 1):
             son = mumlar[-2]
-            BEKLEYEN[coin] = {"t": son["t"], "orta": (son["o"] + son["c"]) / 2, "s": dict(s), "zaman": time.time()}
+            BEKLEYEN[coin] = {"t": son["t"], "orta": (son["o"] + son["c"]) / 2, "s": dict(s), "zaman": time.time(),
+                              "sf": mumlar[-1]["c"], "ok": 0}
             s["bekliyor"] = True
             return s
         _alim_yap(coin, mumlar, dict(s, teyit_sn=0))
@@ -1419,10 +1449,12 @@ def ayar_uygula(ad, deger):
         AYAR[anahtar] = int(deger[1])
         ad_ = {"m": "🚀 Momentum", "g": "🧱 Grid", "d": "🎣 Dipten alım"}[deger[0]]
         yaz(f"{ad_}: " + ("açık" if AYAR[anahtar] else "durduruldu (yeni alım yok; açık pozisyonlar yönetilmeye devam eder)"), klavye=KLAVYE)
-    elif ad in ("bs", "fit", "gec", "lik", "tey", "pot", "rej", "mb") and deger in ("0", "1"):
+    elif ad in ("bs", "fit", "gec", "lik", "tey", "pot", "rej", "mb", "hzt", "kov") and deger in ("0", "1"):
         AYAR[ad] = int(deger)
         adlar = {"rej": "🐻 Piyasa rejimi filtresi (düşüşte yeni alım yok)",
-                 "mb": "🐂 Momentum sadece yükselişte (yatay/düşüşte momentum alımı yok)","tey": "⏳ Giriş teyidi (sonraki mum sıçramayı korursa al)",
+                 "mb": "🐂 Momentum sadece yükselişte (yatay/düşüşte momentum alımı yok)","tey": "⏳ Giriş teyidi (sıçrama korunursa al)",
+                 "hzt": f"⚡ Hızlı teyit (canlı fiyat {HIZLI_TEYIT_KONTROL} kontrol boyunca sıçramayı korursa ~15 sn'de al; kapalıysa sonraki mum beklenir)",
+                 "kov": f"🏃 Kovalama sınırı (teyitte fiyat sinyalin %{KOVALAMA_MAX_YUZDE:g} üstüne kaçtıysa alma)",
                  "pot": f"🎯 Potansiyel filtresi (tahmini hareket < %{MIN_POTANSIYEL_YUZDE:g} ise alma)","bs": "🔒 Maliyet kilidi (coin komisyon dahil maliyeti kurtarınca stop maliyete çekilir · zararla kapanmaz)",
                  "fit": f"🕯 Üst fitil filtresi (≥%{UST_FITIL_MAX})",
                  "gec": f"🏃 Geç giriş filtresi (5dk > %{SICRAMA_MAX_YUZDE:g})",

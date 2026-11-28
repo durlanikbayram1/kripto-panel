@@ -558,10 +558,12 @@ function ciz(){
     `<div class="sr"><div>🐻 PİYASA REJİMİ FİLTRESİ<span>BTC ve piyasa düşüşteyse hiçbir strateji yeni alım yapmaz · simülasyonda çöküş zararını ~%85 azalttı</span></div><button class="sw ${(A.rej??1)?"on":""}" data-rj="1"></button></div>`;
   document.querySelectorAll("[data-st]").forEach(b=>b.onclick=()=>{const k=b.dataset.st,on=b.classList.contains("on"); gonder("ayar_st_"+k+(on?0:1),(on?"DURDURULDU":"AÇILDI"));});
   document.querySelector("[data-rj]").onclick=()=>{const a=(A.rej??1)?1:0; gonder("ayar_rej_"+(a?0:1),a?"REJİM FİLTRESİ KAPALI":"REJİM FİLTRESİ AÇIK");};
-  const fe=V.fe||{}, ftop=(fe.fit||0)+(fe.gec||0)+(fe.lik||0)+(fe.tey||0)+(fe.pot||0)+(fe.rej||0)+(fe.mb||0);
+  const fe=V.fe||{}, ftop=(fe.fit||0)+(fe.gec||0)+(fe.lik||0)+(fe.tey||0)+(fe.pot||0)+(fe.rej||0)+(fe.mb||0)+(fe.kov||0);
   $("feT").textContent="BUGÜN "+ftop+" SİNYAL ELENDİ";
   const fs=(k,b,a,say)=>`<div class="sr"><div>${b}${say!=null?` <span class="tg d" style="display:inline-block;margin:0">${say} elendi</span>`:""}<span>${a}</span></div><button class="sw ${A[k]??1?"on":""}" data-f="${k}"></button></div>`;
-  $("aF").innerHTML=fs("mb","MOMENTUM SADECE YÜKSELİŞTE","Piyasa yatay veya düşüşteyken momentum yeni alım yapmaz · yatayda sıçramalar genelde geri döner",fe.mb||0)+fs("tey","GİRİŞ TEYİDİ","Sinyalden sonraki mum sıçramayı korursa alınır · tepeden alımı azaltır",fe.tey||0)+
+  $("aF").innerHTML=fs("mb","MOMENTUM SADECE YÜKSELİŞTE","Piyasa yatay veya düşüşteyken momentum yeni alım yapmaz · yatayda sıçramalar genelde geri döner",fe.mb||0)+fs("tey","GİRİŞ TEYİDİ","Sıçrama korunursa alınır · tepeden alımı azaltır",fe.tey||0)+
+    fs("hzt","HIZLI TEYİT","Mum kapanışı beklenmez · canlı fiyat 3 kontrol (~15 sn) sıçramayı korursa alınır · kapalıysa sonraki mum beklenir")+
+    fs("kov","KOVALAMA SINIRI","Teyit sırasında fiyat sinyalin %0,5 üstüne kaçtıysa alınmaz · hareketin tepesinden girmez",fe.kov||0)+
     fs("pot","POTANSİYEL FİLTRESİ","Tahmini hareket %1'den azsa alınmaz · komisyonu karşılamaz",fe.pot||0)+
     fs("bs","BAŞABAŞ STOP",A.cm==="takip"?"Coin komisyon dahil maliyeti kurtarınca stop maliyete çekilir · zararla kapanmaz":OTO?"Oto iz modunda gerekmez (oto iz +%1'de zaten +%0,5 kilitler)":"+%1 kâra geçince stop girişin üstüne çekilir · zararla kapanmaz")+
     fs("gec","GEÇ GİRİŞ FİLTRESİ","5 dk'da %2'den fazla yükselmiş coin alınmaz",fe.gec||0)+
