@@ -291,13 +291,13 @@ const canliStop=o=>{ if(!o.tk||o.kap||!o.f) return; o.tp=Math.max(o.tp||o.g,o.f)
 // Stop · giriş · hedef kutuları (girişe göre %)
 function seviyeHTML(o){
   const pc=v=>(v/o.g-1)*100, ps=v=>(v>=0?"+":"-")+"%"+fmt(Math.abs(v)), d=pc(o.f), net=(o.st/(o.be||o.g*1.004)-1)*100;
-  const be=o.be||o.g*1.0035, kilit=o.st>=be*(1-1e-6);
+  const be=o.be||o.g*1.0035, kilit=o.st>=be*(1-1e-6), tp=Math.max(o.tp||o.g,o.f||0);
   const stK=kilit?(net<0.05?"MALİYET KİLİDİ":"KÂR KİLİDİ"):o.ia?(o.tk?"KÂR KİLİDİ":"İZ STOP"):(o.tk?"TAKİP STOP":"STOP");
   const sag=(o.tk&&o.iz)?["TEPE",o.tp||o.g]:o.oto?["TAHMİN",o.h]:(o.iz&&!o.ia)?["İZ BAŞLAR",o.h]:o.iz?["TEPE",o.tp||o.f]:["HEDEF",o.h];
   const sc=net>=0?"up":pc(o.st)>=0?"am":"dn";
   return `<div class="lv"><div class="${sc}"><span>${stK}${o.tk?" · %"+fmt(o.im||1)+" GERİ":""}</span><b data-dv="st_${o.c}" data-v="${(+o.st).toFixed(6)}">${fp(o.st)}</b><i>${ps(pc(o.st))}</i><u class="${net>=0?"up":"dn"}">satarsa net ${ps(net)}</u></div>
     <div class="${d>0?"up":d<0?"dn":""}" style="border-color:var(--ln)"><span>GİRİŞ</span><b>${fp(o.g)}</b><i>şimdi ${ps(d)}</i><u class="${o.f>=be?"up":"dm"}">maliyet ${fp(be)} ${ps(pc(be))}</u></div>
-    <div class="up"><span>${sag[0]}</span><b>${fp(sag[1])}</b><i>${ps(pc(sag[1]))}</i></div></div>`;
+    <div class="up"><span>${sag[0]}</span><b>${fp(sag[1])}</b><i>${ps(pc(sag[1]))}</i>${sag[0]!=="TEPE"?`<u class="${tp>=be?"up":"dm"}">en yüksek ${fp(tp)} ${ps(pc(tp))}</u>`:""}</div></div>`;
 }
 const STR=[["momentum","🚀","MOMENTUM","Ani sıçramaları yakalar"],["grid","🧱","GRID","BTC/ETH merdiven limit emir"],["dip","🎣","DİPTEN ALIM","Aşırı düşüşte limit alış"]];
 const strBilgi=tr=>STR.find(x=>x[0]===tr)||STR[0];
