@@ -281,19 +281,22 @@ const deger=o=>(o.m||0)*(1-0.0015)*o.f/o.g;      // eldeki coin miktarı × anl�
 const karO=o=>deger(o)-(o.m||0);                  // alış komisyonu dahil anlık kâr/zarar
 // Canlı takip stop: anlık fiyat yeni tepe yaptıysa stop hemen yükselir (bot da 5 sn'de bir aynısını yapar)
 // botla aynı (maliyete göre, komisyon dahil): net = yükseliş − mesafe; yükseliş ≥ %1 ise net kârın en az %70'i
-const takipStop=(tp,g,be,im)=>{ const r=(tp/g-1)*100; let n=r-im; if(r>=1-1e-9) n=Math.max(n,.7*(tp/be-1)*100); return be*(1+n/100); };
+const takipStop=(tp,g,be,im)=>{ const r=(tp/g-1)*100, nk=(tp/be-1)*100; let n=r-im; if(r>=1-1e-9) n=Math.max(n,.7*nk);
+  if(nk>=-1e-9&&(typeof A==="undefined"||(A.bs??1))) n=Math.max(n,0);   // maliyet kilidi: maliyet kurtarıldıysa stop en az maliyette
+  return be*(1+n/100); };
 const canliStop=o=>{ if(!o.tk||o.kap||!o.f) return; o.tp=Math.max(o.tp||o.g,o.f);
   const y=takipStop(o.tp,o.g,o.be||o.g*1.0035,o.im||1); if(y>o.st){ o.st=y; if(y>=(o.be||o.g*1.004)) o.ia=1; }
   if(!o.iz&&o.h&&o.f>=o.h) o.kap={s:"HEDEF",f:o.h,z:new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})};
-  else if(o.f<=o.st) o.kap={s:o.ia?"IZ":"STOP",f:o.st,z:new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}; };
+  else if(o.f<=o.st) o.kap={s:o.ia?(o.st<=(o.be||0)*1.0005?"BASABAS":"IZ"):"STOP",f:o.st,z:new Date().toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}; };
 // Stop · giriş · hedef kutuları (girişe göre %)
 function seviyeHTML(o){
   const pc=v=>(v/o.g-1)*100, ps=v=>(v>=0?"+":"-")+"%"+fmt(Math.abs(v)), d=pc(o.f), net=(o.st/(o.be||o.g*1.004)-1)*100;
-  const stK=o.ia?(o.tk?"KÂR KİLİDİ":"İZ STOP"):(o.st>=o.g?"BAŞABAŞ":(o.tk?"TAKİP STOP":"STOP"));
+  const be=o.be||o.g*1.0035, kilit=o.st>=be*(1-1e-6);
+  const stK=kilit?(net<0.05?"MALİYET KİLİDİ":"KÂR KİLİDİ"):o.ia?(o.tk?"KÂR KİLİDİ":"İZ STOP"):(o.tk?"TAKİP STOP":"STOP");
   const sag=(o.tk&&o.iz)?["TEPE",o.tp||o.g]:o.oto?["TAHMİN",o.h]:(o.iz&&!o.ia)?["İZ BAŞLAR",o.h]:o.iz?["TEPE",o.tp||o.f]:["HEDEF",o.h];
   const sc=net>=0?"up":pc(o.st)>=0?"am":"dn";
   return `<div class="lv"><div class="${sc}"><span>${stK}${o.tk?" · %"+fmt(o.im||1)+" GERİ":""}</span><b data-dv="st_${o.c}" data-v="${(+o.st).toFixed(6)}">${fp(o.st)}</b><i>${ps(pc(o.st))}</i><u class="${net>=0?"up":"dn"}">satarsa net ${ps(net)}</u></div>
-    <div class="${d>0?"up":d<0?"dn":""}" style="border-color:var(--ln)"><span>GİRİŞ</span><b>${fp(o.g)}</b><i>şimdi ${ps(d)}</i></div>
+    <div class="${d>0?"up":d<0?"dn":""}" style="border-color:var(--ln)"><span>GİRİŞ</span><b>${fp(o.g)}</b><i>şimdi ${ps(d)}</i><u class="${o.f>=be?"up":"dm"}">maliyet ${fp(be)} ${ps(pc(be))}</u></div>
     <div class="up"><span>${sag[0]}</span><b>${fp(sag[1])}</b><i>${ps(pc(sag[1]))}</i></div></div>`;
 }
 const STR=[["momentum","🚀","MOMENTUM","Ani sıçramaları yakalar"],["grid","🧱","GRID","BTC/ETH merdiven limit emir"],["dip","🎣","DİPTEN ALIM","Aşırı düşüşte limit alış"]];
@@ -306,6 +309,7 @@ const aktif=()=>acik().filter(o=>!o.kap), kapanan=()=>acik().filter(o=>o.kap);
 const SEBEP={IZ:["📈 İZ STOP · KÂR KİLİTLENDİ","up"],BASABAS:["🔒 BAŞABAŞTA KAPANDI","am"],HEDEF:["🎯 HEDEFE ULAŞTI","up"],STOP:["🛑 STOP OLDU","dn"],SURE:["⏱ SÜRE DOLDU","am"]};
 // bot kuralıyla tahmini kapanış sonucu (komisyon dahil)
 const kapSonuc=o=>{const k=o.kap, mak=k.s==="HEDEF", cf=mak?k.f:k.f*(1-0.0005), oran=mak?0.001:0.0015;
+  if(o.be) return (o.m||0)*(cf*(1-oran)/(o.be*(1-0.0005)*(1-0.0015))-1);   // maliyete göre (giriş komisyonu doğru)
   return (o.m||0)*(1-0.0015)*cf/o.g*(1-oran)-(o.m||0);};
 
 const tgw=window.Telegram&&window.Telegram.WebApp, tg=tgw&&tgw.platform&&tgw.platform!=="unknown"?tgw:null;
