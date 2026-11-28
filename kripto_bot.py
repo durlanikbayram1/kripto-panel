@@ -6,6 +6,19 @@ Yeniden başlarsa kaldığı yerden devam eder (durum kripto_durum.json dosyası
 """
 import os, sys, csv, json, time, base64, datetime as dt
 import requests
+import hashlib, builtins, collections, traceback, subprocess, shutil
+
+# --- Kayıt defteri: ekrana yazılan her satır son 500 satırlık hafızada da tutulur (uzaktan takip raporu için) ---
+GUNLUK = collections.deque(maxlen=500)
+_asil_print = builtins.print
+def print(*args, **kw):
+    try:
+        GUNLUK.append(time.strftime("%m-%d %H:%M:%S ") + " ".join(str(a) for a in args))
+    except Exception:
+        pass
+    kw.setdefault("flush", True)
+    _asil_print(*args, **kw)
+KURU_TEST = os.environ.get("KRIPTO_KURU_TEST") == "1"   # güncelleme öncesi deneme çalıştırması
 
 # ======================= AYARLAR =======================
 # >>> SADECE TOKEN SATIRINI DOLDUR <<<  (bu dosyayı kimseyle paylaşma)
@@ -883,7 +896,9 @@ def bildir(metin):
 tg("setMyCommands", commands=[
     {"command": "menu", "description": "Düğmeleri göster"},
     {"command": "durum", "description": "Özet ve kasa durumu"},
-    {"command": "tara", "description": "Coinleri şimdi tara"}])
+    {"command": "tara", "description": "Coinleri şimdi tara"},
+    {"command": "surum", "description": "Sürüm, güncelleme ve rapor durumu"},
+    {"command": "guncelle", "description": "GitHub'daki yeni sürümü şimdi yükle"}])
 
 # Bot kapalıyken gelen eski mesajları atla
 guncelleme_no = 0
@@ -1480,6 +1495,7 @@ def telegrami_dinle(bekle):
             if str(msg["chat"]["id"]) != str(TG_CHAT) or "text" not in msg:
                 continue
             try:
+                SON_MESAJ["id"] = msg.get("message_id")
                 komut_isle(msg["text"])
             except Exception as e:
                 yaz(f"⚠️ Hata: {type(e).__name__}")
@@ -1791,6 +1807,237 @@ def hesabi_sifirla():
     durumu_kaydet()
     yedek_al(zorla=True)
 
+# ---------------- Uzaktan takip ve otomatik güncelleme ----------------
+# 1) Otomatik güncelleme: 10 dk'da bir GitHub'daki kripto_bot.py'ye bakar. Değişmişse yeni kodu indirir,
+#    ayrı bir klasörde deneme olarak başlatır (Telegram'sız, işlem yapmadan). Deneme sorunsuzsa durumu
+#    kaydeder, eski sürümü kripto_bot_onceki.py olarak saklar ve yeni sürümle kendini yeniden başlatır.
+#    Sunucuya girip Reboot etmeye gerek kalmaz.
+# 2) Rapor: 15 dk'da bir durum, son hatalar ve işlem dökümü GİZLİ kripto-log deposuna yazılır (Claude takip eder).
+#    Bunun için Telegram'dan bir kez:  /github <token>  gönderilir (mesaj hemen silinir, token sadece sunucuda durur).
+KOD_DEPO = os.environ.get("KRIPTO_KOD_DEPO", "durlanikbayram1/kripto-panel")
+KAYIT_DEPO = os.environ.get("KRIPTO_KAYIT_DEPO", "durlanikbayram1/kripto-log")
+GH_TOKEN_DOSYASI = os.path.join(KLASOR, ".github_token")
+GUNCELLEME_ARALIGI_SN = 600
+RAPOR_ARALIGI_SN = 900
+GH_API = "https://api.github.com"
+SON_MESAJ = {"id": None}
+GUNC = {"son": time.time(), "durum": "bekliyor", "red": None}
+RAPOR = {"son": 0, "sha": {}, "csv_ozet": None, "durum": "token yok", "hata_say": 0}
+BASLAMA_ZAMANI = time.time()
+
+def _git_sha(veri):
+    return hashlib.sha1(b"blob %d\0" % len(veri) + veri).hexdigest()
+
+try:
+    with open(os.path.abspath(__file__), "rb") as _f:
+        YEREL_SHA = _git_sha(_f.read())
+except Exception:
+    YEREL_SHA = "?"
+SURUM = YEREL_SHA[:7]
+
+def gh_token():
+    t = os.environ.get("KRIPTO_GH_TOKEN", "").strip()
+    if not t and os.path.exists(GH_TOKEN_DOSYASI):
+        try:
+            t = open(GH_TOKEN_DOSYASI, encoding="utf-8").read().strip()
+        except Exception:
+            t = ""
+    return t
+
+def _gh_baslik(token=None):
+    b = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if token:
+        b["Authorization"] = "Bearer " + token
+    return b
+
+def kuru_test(dosya):
+    """Yeni kodu ayrı klasörde, Telegram'sız ve işlem yapmadan başlatır; açılış sorunsuz mu bakar."""
+    klasor = os.path.join(KLASOR, "_deneme")
+    shutil.rmtree(klasor, ignore_errors=True)
+    os.makedirs(klasor)
+    hedef = os.path.join(klasor, "kripto_bot.py")
+    shutil.copy(dosya, hedef)
+    ortam = {k: v for k, v in os.environ.items() if k not in ("KRIPTO_BOT_TOKEN", "KRIPTO_CHAT_ID", "KRIPTO_GH_TOKEN")}
+    ortam["KRIPTO_KURU_TEST"] = "1"
+    try:
+        r = subprocess.run([sys.executable, hedef], cwd=klasor, env=ortam, capture_output=True, text=True, timeout=240)
+        cikti = (r.stdout + r.stderr)[-1500:]
+        return r.returncode == 0 and "KURU_TEST_TAMAM" in r.stdout, cikti
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+    finally:
+        shutil.rmtree(klasor, ignore_errors=True)
+
+def guncelleme_kontrol(zorla=False):
+    if KURU_TEST or (not zorla and time.time() - GUNC["son"] < GUNCELLEME_ARALIGI_SN):
+        return
+    GUNC["son"] = time.time()
+    try:
+        token = gh_token()
+        r = OTURUM.get(f"{GH_API}/repos/{KOD_DEPO}/contents/kripto_bot.py", headers=_gh_baslik(token), timeout=30)
+        if r.status_code == 401 and token:                      # token yanlışsa tokensız dene (depo açık)
+            r = OTURUM.get(f"{GH_API}/repos/{KOD_DEPO}/contents/kripto_bot.py", headers=_gh_baslik(), timeout=30)
+        if r.status_code != 200:
+            GUNC["durum"] = f"GitHub {r.status_code}"
+            return
+        j = r.json()
+        if j.get("sha") in (YEREL_SHA, GUNC["red"]):
+            GUNC["durum"] = "güncel"
+            if zorla:
+                yaz(f"✅ Bot güncel (sürüm {SURUM}).")
+            return
+        yeni = base64.b64decode(j.get("content", ""))
+        if _git_sha(yeni) != j.get("sha"):
+            GUNC["durum"] = "indirme bozuk"
+            return
+        try:
+            compile(yeni, "kripto_bot.py", "exec")              # yazım hatası varsa burada durur
+        except SyntaxError as e:
+            GUNC["red"] = j["sha"]
+            GUNC["durum"] = f"yeni sürüm {j['sha'][:7]} yazım hatalı (satır {e.lineno}), eski sürümle devam"
+            print(f"⛔ {GUNC['durum']}")
+            return
+        aday = os.path.join(KLASOR, "kripto_bot_yeni.py")
+        with open(aday, "wb") as f:
+            f.write(yeni)
+        print(f"🔄 Yeni sürüm bulundu ({j['sha'][:7]}), deneme çalıştırması yapılıyor...")
+        tamam, cikti = kuru_test(aday)
+        if not tamam:
+            GUNC["red"] = j["sha"]
+            GUNC["durum"] = f"yeni sürüm {j['sha'][:7]} denemede çöktü, eski sürümle devam"
+            print(f"⛔ Yeni sürüm {j['sha'][:7]} reddedildi (deneme başarısız):\n{cikti}")
+            yaz(f"⛔ Yeni sürüm ({j['sha'][:7]}) denemeden geçemedi, bot eski sürümle ({SURUM}) çalışmaya devam ediyor.")
+            os.remove(aday)
+            return
+        durumu_kaydet()
+        yedek_al(zorla=True)
+        kendi = os.path.abspath(__file__)
+        shutil.copy(kendi, os.path.join(KLASOR, "kripto_bot_onceki.py"))
+        os.replace(aday, kendi)
+        print(f"🔄 Güncelleniyor: {SURUM} → {j['sha'][:7]}")
+        yaz(f"🔄 Bot otomatik güncellendi ({SURUM} → {j['sha'][:7]}), yeniden başlıyor. Açık pozisyonlar korunuyor.")
+        rapor_yaz(zorla=True)
+        os.execv(sys.executable, [sys.executable, kendi] + sys.argv[1:])
+    except Exception as e:
+        GUNC["durum"] = f"hata: {type(e).__name__}: {e}"
+        print(f"(Güncelleme kontrolü yapılamadı: {type(e).__name__}: {e})")
+
+def _gh_yaz(token, yol, icerik, mesaj):
+    url = f"{GH_API}/repos/{KAYIT_DEPO}/contents/{yol}"
+    veri = {"message": mesaj, "content": base64.b64encode(icerik).decode()}
+    sha = RAPOR["sha"].get(yol)
+    if sha is None:
+        g = OTURUM.get(url, headers=_gh_baslik(token), timeout=30)
+        if g.status_code == 200:
+            sha = g.json().get("sha")
+    if sha:
+        veri["sha"] = sha
+    r = OTURUM.put(url, headers=_gh_baslik(token), json=veri, timeout=40)
+    if r.status_code == 409 or r.status_code == 422:            # sha eskimiş: bir kez tazeleyip yeniden dene
+        RAPOR["sha"].pop(yol, None)
+        g = OTURUM.get(url, headers=_gh_baslik(token), timeout=30)
+        if g.status_code == 200:
+            veri["sha"] = g.json().get("sha")
+            r = OTURUM.put(url, headers=_gh_baslik(token), json=veri, timeout=40)
+    if r.status_code in (200, 201):
+        RAPOR["sha"][yol] = r.json()["content"]["sha"]
+        return True
+    raise RuntimeError(f"{yol}: GitHub {r.status_code} {r.text[:120]}")
+
+def _hata_satirlari():
+    anahtar = ("⚠️", "⛔", "❌", "hata", "Hata", "Traceback", "Error", "yapılamadı", "alınamadı", "kaydedilemedi", "okunamadı")
+    return [x for x in GUNLUK if any(k in x for k in anahtar)][-60:]
+
+def rapor_yaz(zorla=False):
+    if KURU_TEST:
+        return
+    if not zorla and time.time() - RAPOR["son"] < RAPOR_ARALIGI_SN:
+        return
+    RAPOR["son"] = time.time()
+    token = gh_token()
+    if not token:
+        RAPOR["durum"] = "token yok (/github ile ver)"
+        return
+    try:
+        durum = {}
+        if os.path.exists(DURUM_DOSYASI):
+            with open(DURUM_DOSYASI, encoding="utf-8") as f:
+                durum = json.load(f)
+        paket = {
+            "zaman": simdi().isoformat(), "zaman_utc": dt.datetime.utcnow().isoformat() + "Z",
+            "surum": SURUM, "calisma_suresi_dk": round((time.time() - BASLAMA_ZAMANI) / 60),
+            "otomatik_alim": globals().get("otomatik"), "guncelleme": GUNC["durum"],
+            "fiyat_kaynagi": globals().get("aktif_kaynak"), "coin_sayisi": len(globals().get("COINLER", [])),
+            "rejim": globals().get("REJIM"), "elenen_bugun": globals().get("ELENEN"),
+            "ozet": tum_ozet("Durum"), "son_hatalar": _hata_satirlari(), "son_kayitlar": list(GUNLUK)[-150:],
+            "durum_dosyasi": durum,
+        }
+        icerik = json.dumps(paket, ensure_ascii=False, indent=1, default=str).encode("utf-8")
+        _gh_yaz(token, "durum.json", icerik, f"durum {simdi():%d.%m %H:%M} · {SURUM}")
+        if os.path.exists(ISLEM_DOSYASI):
+            with open(ISLEM_DOSYASI, "rb") as f:
+                csv_veri = f.read()
+            oz = hashlib.sha1(csv_veri).hexdigest()
+            if oz != RAPOR["csv_ozet"]:
+                _gh_yaz(token, "islemler.csv", csv_veri, f"işlemler {simdi():%d.%m %H:%M}")
+                RAPOR["csv_ozet"] = oz
+        RAPOR["durum"] = f"son rapor {simdi():%H:%M}"
+        RAPOR["hata_say"] = 0
+    except Exception as e:
+        RAPOR["hata_say"] += 1
+        RAPOR["durum"] = f"rapor yazılamadı: {e}"
+        print(f"(Rapor yazılamadı: {type(e).__name__}: {e})")
+        if RAPOR["hata_say"] == 3:
+            yaz("⚠️ GitHub'a rapor yazılamıyor (3 kez denendi). Token'ın süresi dolmuş ya da kripto-log deposuna "
+                "yazma izni yok olabilir. Yeni token için: /github <token>")
+
+def token_kaydet(token):
+    token = token.strip()
+    if SON_MESAJ["id"]:
+        tg("deleteMessage", chat_id=TG_CHAT, message_id=SON_MESAJ["id"])   # token sohbette kalmasın
+    if len(token) < 20 or " " in token:
+        yaz("⚠️ Token geçersiz görünüyor. Şöyle gönder: /github github_pat_...")
+        return
+    r = OTURUM.get(f"{GH_API}/repos/{KAYIT_DEPO}", headers=_gh_baslik(token), timeout=30)
+    if r.status_code != 200:
+        yaz(f"⚠️ Token ile {KAYIT_DEPO} deposuna erişilemedi (GitHub {r.status_code}). "
+            "Depo adını ve token'ın bu depoya 'Contents: Read and write' izni olduğunu kontrol et.")
+        return
+    with open(GH_TOKEN_DOSYASI, "w", encoding="utf-8") as f:
+        f.write(token)
+    try:
+        os.chmod(GH_TOKEN_DOSYASI, 0o600)
+    except Exception:
+        pass
+    RAPOR["hata_say"] = 0
+    rapor_yaz(zorla=True)
+    yaz("✅ GitHub bağlantısı tamam, token mesajın silindi. Bot artık 15 dk'da bir rapor yazacak "
+        f"({RAPOR['durum']}). Claude buradan takip edebilir.")
+
+def surum_metni():
+    return (f"🧩 Sürüm: {SURUM} · çalışma: {round((time.time() - BASLAMA_ZAMANI) / 3600, 1)} saat\n"
+            f"🔄 Güncelleme: {GUNC['durum']} (10 dk'da bir kontrol)\n"
+            f"📤 Rapor: {RAPOR['durum']}")
+
+_eski_komut_isle = komut_isle
+def komut_isle(metin):
+    m = metin.strip()
+    if m.lower().startswith("/github"):
+        parca = m.split(maxsplit=1)
+        if len(parca) == 2:
+            return token_kaydet(parca[1])
+        return yaz("Kullanım: /github <token>  (mesaj hemen silinir)")
+    if m.lower() in ("/guncelle", "/güncelle", "guncelle", "güncelle"):
+        yaz("🔎 GitHub'da yeni sürüm aranıyor...")
+        return guncelleme_kontrol(zorla=True)
+    if m.lower() in ("/surum", "/sürüm", "surum", "sürüm"):
+        return yaz(surum_metni())
+    return _eski_komut_isle(metin)
+
+if KURU_TEST:
+    _asil_print("KURU_TEST_TAMAM")
+    sys.exit(0)
+
 yedekten = yedekten_geri_yukle()
 yuklendi = durumu_yukle()
 # ---------------- Ana döngü ----------------
@@ -1838,10 +2085,12 @@ try:
         telegrami_dinle(min(25, kalan))
         durumu_kaydet()
         yedek_al()
+        rapor_yaz()
+        guncelleme_kontrol()
       except KeyboardInterrupt:
         raise
       except Exception as e:
-        print(f"⚠️ Döngü hatası ({type(e).__name__}: {e}); 15 sn sonra devam.")
+        print(f"⚠️ Döngü hatası ({type(e).__name__}: {e}); 15 sn sonra devam.\n" + traceback.format_exc(limit=4))
         time.sleep(15)
 except KeyboardInterrupt:
     print("⏹️ Durduruldu.")
